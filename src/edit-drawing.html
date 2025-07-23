@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<!--
+   edit-drawing.html
+ * (c)2025 Forward Computing and Control Pty. Ltd.
+ * NSW Australia, www.forward.com.au
+ * This code is not warranted to be fit for any purpose. You may only use it at your own risk.
+ * This generated code may be freely used for both private and commercial use
+ * provided this copyright is maintained.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Drawing Items</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            font-size: 66.7%;
+        }
+        items_label {
+            display: block;
+            margin-top: 10px;
+            margin-bottom: 3px;
+            margin-right: 10px;
+            font-size: 166.7%;
+            font-weight: bold;
+        }
+        header_label {
+            display: block;
+            margin-top: 0px;
+            margin-bottom: 0px;
+            margin-right: 10px;
+            font-size: 200%;
+            font-weight: bold;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            gap: 20px;
+        }
+        .left-panel {
+            flex: 1;
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        .right-panel {
+            flex: 1;
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+            min-height: 600px;
+        }
+        h1, h2 {
+            margin-top: 0;
+        }
+        h1 {
+            font-size: 2em;
+        }
+        h2 {
+            font-size: 1.5em;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .back-button {
+            padding: 8px 16px;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .back-button:hover {
+            background-color: #5a6268;
+        }
+        .items-list {
+            max-height: 600px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            margin-bottom: 20px;
+        }
+        .item-row {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            background-color: white;
+            cursor: pointer;
+        }
+        .item-row:hover {
+            background-color: #f8f9fa;
+        }
+        .item-row.selected {
+            background-color: #e3f2fd;
+        }
+        .item-info {
+            flex: 1;
+            margin-right: 10px;
+        }
+        .item-type {
+            font-weight: bold;
+            color: #007bff;
+        }
+        .item-details {
+            font-size: 11px;
+            color: #666;
+            margin-top: 2px;
+        }
+        .item-actions {
+            display: flex;
+            gap: 5px;
+        }
+        .btn {
+            padding: 4px 8px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+        }
+        .btn-edit {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        .btn-remove {
+            background-color: #dc3545;
+            color: white;
+        }
+        .btn-up {
+            background-color: #28a745;
+            color: white;
+        }
+        .btn-down {
+            background-color: #17a2b8;
+            color: white;
+        }
+        .btn:hover {
+            opacity: 0.8;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .iframe-container {
+            border: 1px solid #ccc;
+            margin-top: 20px;
+            position: relative;
+            height: 500px;
+            flex-grow: 1;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        .drawing-info {
+            background-color: white;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+        }
+        .drawing-info h3 {
+            margin: 0 0 10px 0;
+            color: #007bff;
+        }
+        .drawing-meta {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 11px;
+        }
+        .meta-item {
+            display: flex;
+            justify-content: space-between;
+        }
+        .meta-label {
+            font-weight: bold;
+        }
+        .no-items {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-style: italic;
+        }
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 5px;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+            padding: 8px 16px;
+            font-size: 12px;
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+            color: white;
+            padding: 8px 16px;
+            font-size: 12px;
+        }
+        
+        /* Nested items styles */
+        .touch-zone-item {
+            border-left: 4px solid #007bff;
+        }
+        
+        .nested-items {
+            border-left: 2px solid #28a745;
+            margin-left: 10px;
+            padding-left: 10px;
+        }
+        
+        .nested-item-row {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            border-bottom: 1px solid #f0f0f0;
+            background-color: #f8f9fa;
+            margin-bottom: 2px;
+        }
+        
+        .nested-item-row:hover {
+            background-color: #e9ecef;
+        }
+        
+        .nested-type {
+            font-size: 10px;
+            color: #28a745;
+            font-weight: bold;
+        }
+        
+        .btn-small {
+            padding: 2px 6px;
+            font-size: 9px;
+        }
+        
+        .btn-expand {
+            background-color: #17a2b8;
+            color: white;
+            margin-right: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="left-panel">
+            <div class="header">
+                <header_label>Edit Drawing Items</header_label>
+                <a href="/control.html" class="back-button">← Back to Control Panel</a>
+            </div>
+            
+            <div class="drawing-info">
+                <h3 id="drawing-name">Loading...</h3>
+                <div class="drawing-meta">
+                    <div class="meta-item">
+                        <span class="meta-label">Canvas Size:</span>
+                        <span id="canvas-size">-</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Canvas Color:</span>
+                        <span id="canvas-color">-</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Refresh Rate:</span>
+                        <span id="refresh-rate">-</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label">Total Items:</span>
+                        <span id="total-items">-</span>
+                    </div>
+                </div>
+                <button id="edit-canvas-btn" class="btn-secondary" style="margin-top: 15px; width: 100%;">Edit Drawing Properties</button>
+            </div>
+
+            <!-- Canvas Properties Edit Form (initially hidden) -->
+            <div id="canvas-edit-form" class="drawing-info" style="display: none;">
+                <h3>Edit Drawing Properties</h3>
+                <div style="display: grid; gap: 15px;">
+                    <div>
+                        <label for="canvas-width" style="display: block; font-weight: bold; margin-bottom: 5px;">Width (1-255):</label>
+                        <input type="number" id="canvas-width" min="1" max="255" style="width: 100%; padding: 5px;">
+                    </div>
+                    <div>
+                        <label for="canvas-height" style="display: block; font-weight: bold; margin-bottom: 5px;">Height (1-255):</label>
+                        <input type="number" id="canvas-height" min="1" max="255" style="width: 100%; padding: 5px;">
+                    </div>
+                    <div>
+                        <label for="canvas-bg-color" style="display: block; font-weight: bold; margin-bottom: 5px;">Background Color:</label>
+                        <input type="hidden" id="canvas-bg-color" value="15">
+                        <div id="canvas-bg-color-picker"></div>
+                    </div>
+                    <div>
+                        <label for="canvas-refresh" style="display: block; font-weight: bold; margin-bottom: 5px;">Refresh Rate (seconds, 0=no refresh):</label>
+                        <input type="number" id="canvas-refresh" min="0" max="3600" step="1" style="width: 100%; padding: 5px;" placeholder="0, or 1-3600">
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button id="save-canvas-btn" class="btn-primary" style="flex: 1;">Save Changes</button>
+                        <button id="cancel-canvas-btn" class="btn-secondary" style="flex: 1;">Cancel</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="action-buttons">
+               <items_label for="item-type">Items List</items_label>
+                <button class="btn btn-primary" id="add-item-btn">Add New Item</button>
+            </div>
+            
+            <div class="items-list" id="items-list">
+                <div class="no-items">Loading items...</div>
+            </div>
+        </div>
+        
+        <div class="right-panel">
+            <h2>Drawing Preview</h2>
+            <div class="iframe-container">
+                <iframe id="preview-iframe"></iframe>
+            </div>
+        </div>
+    </div>
+    
+    <script src="colorUtils.js"></script>
+    <script src="shared-iframe.js"></script>
+    <script src="edit-drawing.js"></script>
+</body>
+</html>

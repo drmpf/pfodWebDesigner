@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<!--
+   control.html
+ * (c)2025 Forward Computing and Control Pty. Ltd.
+ * NSW Australia, www.forward.com.au
+ * This code is not warranted to be fit for any purpose. You may only use it at your own risk.
+ * This generated code may be freely used for both private and commercial use
+ * provided this copyright is maintained.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>pfodWeb Designer Control Panel</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            font-size: 66.7%; /* Reduced by 1/3 from default */
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            padding: 8px;
+            width: 100%;
+            max-width: 300px;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 5px 11px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        h1 {
+            font-size: 2em; /* Adjusted heading size */
+        }
+        h2 {
+            font-size: 1.5em; /* Adjusted heading size */
+        }
+        .version-display {
+            max-width: 150px; /* Reduced by half from typical 300px input width */
+            font-size: 11px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 11px;
+        }
+        th, td {
+            padding: 7px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f2f2f2;
+            font-size: 12px;
+        }
+        .action-link {
+            display: inline-block;
+            padding: 2px 6px;
+            margin-right: 7px;
+            text-decoration: none;
+            background-color: #4CAF50;
+            color: white;
+            border-radius: 3px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .action-link:hover {
+            text-decoration: underline;
+        }
+        .clear-data-btn {
+            padding: 2px 6px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .clear-data-btn:hover {
+            background-color: #d32f2f;
+        }
+        .save-json-btn {
+            padding: 2px 6px;
+            background-color: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+        .save-json-btn:hover {
+            background-color: #0b7dda;
+        }
+        .edit-dwg-btn {
+            padding: 2px 6px;
+            background-color: #FF9800;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 5px;
+        }
+        .edit-dwg-btn:hover {
+            background-color: #F57C00;
+        }
+        .load-json-btn {
+            padding: 2px 6px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-right: 5px;
+        }
+        .load-json-btn:hover {
+            background-color: #45a049;
+        }
+        .file-input {
+            display: none;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 15px;
+            align-items: center;
+        }
+        .tab {
+            padding: 7px 14px;
+            background-color: #ddd;
+            cursor: pointer;
+            margin-right: 3px;
+            border-radius: 4px 4px 0 0;
+            font-size: 11px;
+            /* Ensure tabs are never disabled */
+            opacity: 1 !important;
+            pointer-events: auto !important;
+        }
+        .tab.active {
+            background-color: #f5f5f5;
+            font-weight: bold;
+        }
+        /* Ensure the Load Drawing button is never disabled or affected by action-link styles */
+        #load-json-btn {
+            opacity: 1 !important;
+            background-color: #ddd !important;
+            cursor: pointer !important;
+            pointer-events: auto !important;
+        }
+        #load-json-btn:hover {
+            background-color: #f5f5f5 !important;
+        }
+        #load-json-btn:disabled, 
+        #load-json-btn.disabled,
+        div[data-tab="create"]:disabled,
+        div[data-tab="create"].disabled {
+            opacity: 1 !important;
+            background-color: #ddd !important;
+            cursor: pointer !important;
+            pointer-events: auto !important;
+        }
+        
+        /* Create Drawing button styling */
+        .create-btn {
+            opacity: 1 !important;
+            background-color: #4CAF50 !important;
+            color: white !important;
+            cursor: pointer !important;
+            pointer-events: auto !important;
+        }
+        .create-btn:hover {
+            background-color: #45a049 !important;
+        }
+        .cancel-btn {
+            padding: 5px 11px;
+            background-color: #f44336;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            margin-left: 10px;
+        }
+        .cancel-btn:hover {
+            background-color: #d32f2f;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .preview-canvas {
+            border: 1px solid #ccc;
+            margin-top: 15px;
+        }
+        .drawings-container {
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 15px;
+            border: 1px solid #ddd;
+        }
+        .action-buttons {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            align-items: center;
+        }
+        .drawing-actions {
+            display: flex;
+            gap: 5px;
+        }
+        /* Style for selected row */
+        tr.selected {
+            background-color: #e3f2fd !important;
+        }
+        /* Hover effect on table rows */
+        #drawings-table tbody tr {
+            cursor: pointer;
+        }
+        #drawings-table tbody tr:hover {
+            background-color: #f5f5f5;
+        }
+        /* Make the action buttons look like buttons */
+        #view-drawing-btn.action-link {
+            display: inline-block;
+            padding: 2px 6px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+        }
+        /* Define common styles for action buttons */
+        .action-link {
+            /* Base styles only, no background color here */
+        }
+        
+        /* Button color classes */
+        .green-btn {
+            background-color: #4CAF50 !important;
+        }
+        
+        /* Button color classes */
+        .purple-btn {
+            background-color: #9C27B0 !important;
+        }
+        
+        .orange-btn {
+            background-color: #FF9800 !important;
+        }
+        
+        .blue-btn {
+            background-color: #2196F3 !important;
+        }
+        
+        .red-btn {
+            background-color: #f44336 !important;
+        }
+        
+        .yellow-btn {
+            background-color: #FFC107 !important;
+        }
+        
+        /* Consistent disabled style for all action buttons */
+        .action-link:disabled {
+            background-color: #cccccc !important; /* Override any color when disabled */
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>pfodWeb Designer Control Panel</h1>
+        
+        <div class="tabs">
+            <div class="tab" data-tab="create">Create Drawing</div>
+            <div class="tab" id="load-json-btn">Load Drawing</div>
+            <input type="file" id="file-input" class="file-input" accept=".json">
+        </div>
+        
+        <!-- Drawings List Tab -->
+        <div id="drawings-tab" class="tab-content active section">
+            <h2>Available Drawings</h2>
+            <div class="action-buttons">
+                <div class="drawing-actions">
+                    <button id="view-drawing-btn" class="action-link green-btn" disabled>View</button>
+                    <button id="edit-drawing-btn" class="action-link orange-btn" disabled>Edit</button>
+                    <button id="copy-drawing-btn" class="action-link yellow-btn" disabled>Copy</button>
+                    <button id="save-drawing-btn" class="action-link blue-btn" disabled>Save Dwg</button>
+                    <button id="arduino-export-btn" class="action-link purple-btn" disabled>Arduino Export</button>
+                    <button id="delete-drawing-btn" class="action-link red-btn" disabled>Delete Dwg</button>
+                </div>
+            </div>
+            
+            <div class="drawings-container">
+                <table id="drawings-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Canvas Size</th>
+                            <th>Color</th>
+                            <th>Refresh</th>
+                            <th>Items</th>
+                            <th>Version</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Drawings will be populated here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Create Drawing Tab -->
+        <div id="create-tab" class="tab-content section">
+            <h2>Create New Drawing</h2>
+            <form id="create-drawing-form">
+                <div class="form-group">
+                    <label for="drawing-name">Drawing Name:</label>
+                    <input type="text" id="drawing-name" required>
+                </div>
+                <div class="form-group">
+                    <label for="canvas-width">Canvas Width (1-255):</label>
+                    <input type="number" id="canvas-width" value="50" min="1" max="255">
+                </div>
+                <div class="form-group">
+                    <label for="canvas-height">Canvas Height (1-255):</label>
+                    <input type="number" id="canvas-height" value="50" min="1" max="255">
+                </div>
+                <div class="form-group">
+                    <label for="canvas-color">Canvas Color:</label>
+                    <input type="hidden" id="canvas-color" value="0">
+                    <div id="canvas-color-picker"></div>
+                </div>
+                <div class="form-group">
+                    <label for="canvas-refresh">Refresh Interval (seconds, 0 for no auto-refresh):</label>
+                    <input type="number" id="canvas-refresh" value="0" min="0" max="3600" step="1" placeholder="0, or 1-3600">
+                </div>
+                <button type="submit" class="create-btn">Create Drawing</button>
+                <button type="button" id="cancel-btn" class="cancel-btn">Cancel</button>
+            </form>
+        </div>
+        
+        <!-- Add Items Tab removed as it's now a button in the Drawings tab -->
+    </div>
+
+    <script src="colorUtils.js"></script>
+    <script src="webTranslator.js"></script>
+    <script src="arduinoExport.js"></script>
+    <script src="control.js"></script>
+</body>
+</html>

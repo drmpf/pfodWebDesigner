@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<!--
+   intro-page.html
+ * (c)2025 Forward Computing and Control Pty. Ltd.
+ * NSW Australia, www.forward.com.au
+ * This code is not warranted to be fit for any purpose. You may only use it at your own risk.
+ * This generated code may be freely used for both private and commercial use
+ * provided this copyright is maintained.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>pfodWeb</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background-color: white;
+        }
+        #message-overlay {
+            display: flex;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.9);
+            z-index: 1000;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+        #message-overlay h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+        #message-overlay p {
+            font-size: 16px;
+            margin-bottom: 15px;
+            color: #666;
+            max-width: 600px;
+        }
+        #message-overlay .example {
+            font-family: monospace;
+            background-color: #f5f5f5;
+            padding: 8px 12px;
+            border-radius: 3px;
+            margin: 5px 0;
+        }
+        #message-overlay .button {
+            display: inline-block;
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            margin-top: 20px;
+            text-decoration: none;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="message-overlay">
+        <h1 class="title">pfodWeb Designer</h1>
+        <p>(c)2025 <a href="https://www.forward.com.au/pfodWeb">https://www.forward.com.au/pfod/pfodWeb</a>
+        <a href="/control" class="button">Go to Control Panel</a>
+    </div>
+<script>
+      document.title = `pfodWeb Designer`;
+</script>
+</body>
+</html>

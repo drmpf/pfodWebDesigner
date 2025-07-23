@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<!--
+   add-item.html
+ * (c)2025 Forward Computing and Control Pty. Ltd.
+ * NSW Australia, www.forward.com.au
+ * This code is not warranted to be fit for any purpose. You may only use it at your own risk.
+ * This generated code may be freely used for both private and commercial use
+ * provided this copyright is maintained.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Item to </title>
+    <style>
+      input[type='number']{
+        width: 80px;
+      } 
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            font-size: 66.7%; /* Reduced by 1/3 from default */
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            gap: 20px;
+        }
+        .left-panel {
+            flex: 1;
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        .right-panel {
+            flex: 1;
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 5px;
+            display: flex;
+            flex-direction: column;
+            min-height: 600px;
+        }
+        .form-group {
+            margin-bottom: 10px;
+        }
+        .form-group-row {
+            display: flex;
+            flex-direction: row;
+            margin-bottom: 10px;
+        }
+        .checkbox-group {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            justify-items: start;
+            align-items: center;
+            margin-bottom: 10px;
+            text-align: left;
+        }
+        .checkbox-group input {
+            margin-right: 5px;
+            width: auto;
+        }
+        .checkbox-group label {
+            margin-bottom: 0;
+            padding-left: 0;
+        }
+        .inline-group {
+            display: flex;
+            justify-content: flex-start;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .half-width {
+            width: 50%;
+        }
+        .half-width input {
+            max-width: 100px;
+        }
+        label {
+            display: block;
+            margin-bottom: 3px;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+         label_row {
+            display: block;
+            margin-top: 10px;
+            margin-bottom: 3px;
+            margin-right: 10px;
+            font-weight: bold;
+        }
+        input, select {
+            padding: 5px;
+            width: 100%;
+            max-width: 200px; /* Reduced by 1/3 from 300px */
+            box-sizing: border-box;
+        }
+        button {
+            padding: 5px 11px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            margin-right: 7px;
+            font-size: 11px; /* Smaller font for buttons */
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .cancel-btn {
+            background-color: #f44336;
+        }
+        .cancel-btn:hover {
+            background-color: #d32f2f;
+        }
+        .iframe-container {
+            border: 1px solid #ccc;
+            margin-top: 20px;
+            position: relative;
+            height: 500px;
+            flex-grow: 1;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+        h1, h2 {
+            margin-top: 0;
+        }
+        h1 {
+            font-size: 2em;
+        }
+        h2 {
+            font-size: 1.5em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="left-panel">
+            <h1 id="drawing-title">Add Item to Drawing</h1>
+            
+            <div class="form-group-row">
+                <label_row for="item-type">Item Type:</label_row>
+                <select id="item-type">
+                    <option value="line">Line</option>
+                    <option value="rectangle">Rectangle</option>
+                    <option value="circle">Circle</option>
+                    <option value="arc">Arc</option>
+                    <option value="label">Label</option>
+                    <option value="value">Value</option>
+                    <option id="option-touchZone" value="touchZone">Touch Zone</option>
+                    <option value="insertDwg">Insert Drawing</option>
+                    <option value="pushZero">pushZero</option>
+                    <option value="popZero">popZero</option>
+                    <option value="index">Index Placeholder</option>
+                    <option value="erase">Erase Item</option>
+                    <option value="hide">Hide Item</option>
+                    <option value="unhide">Unhide Item</option>
+                </select>
+            </div>
+            
+            <!-- Line Properties -->
+            <div id="line-properties">
+                <div class="inline-group">
+                    <div class="half-width">
+                        <label for="line-xoffset">X Offset:</label>
+                        <input type="number" id="line-xoffset" value="0" style="margin-top: 5px;">
+                    </div>
+                    <div class="half-width">
+                        <label for="line-yoffset">Y Offset:</label>
+                        <input type="number" id="line-yoffset" value="0" style="margin-top: 5px;">
+                    </div>
+                </div>
+                <div class="inline-group">
+                    <div class="half-width">
+                        <label for="line-x">X:</label>
+                        <input type="number" id="line-x" value="1">
+                    </div>
+                    <div class="half-width">
+                        <label for="line-y">Y:</label>
+                        <input type="number" id="line-y" value="1">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Push Transform Properties -->
+            <div id="push-properties" style="display: none;">
+                <div class="inline-group">
+                    <div class="half-width">
+                        <label for="push-x">X Translation:</label>
+                        <input type="number" id="push-x" value="0" step="any">
+                    </div>
+                    <div class="half-width">
+                        <label for="push-y">Y Translation:</label>
+                        <input type="number" id="push-y" value="0" step="any">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="push-scale">Scale Factor:</label>
+                    <input type="number" id="push-scale" value="1.0" step="any" style="max-width: 100px;">
+                </div>
+            </div>
+            
+            <!-- Pop Transform Properties -->
+            <div id="pop-properties" style="display: none;">
+                <p>Pop will restore the previous offset and scale.</p>
+                <p>No additional properties are needed.</p>
+            </div>
+            
+            <!-- Index Placeholder Properties -->
+            <div id="index-properties" style="display: none;">
+                <p>Index placeholder reserves an index without drawing anything.</p>
+                <p>Only an index number ≥ 1 is needed.</p>
+            </div>
+            
+            <!-- Erase Item Properties -->
+            <div id="erase-properties" style="display: none;">
+                <p>Erase completely removes the specified index or command.</p>
+                <div class="form-group">
+                    <label for="erase-type">Erase Type:</label>
+                    <select id="erase-type" onchange="toggleEraseInputs()">
+                        <option value="idx">By Index</option>
+                        <option value="cmd">By Command</option>
+                    </select>
+                </div>
+                <div id="erase-idx-input" class="form-group">
+                    <label for="erase-idx">Index (≥ 1):</label>
+                    <input type="number" id="erase-idx" min="1" value="1">
+                </div>
+                <div id="erase-cmd-input" class="form-group" style="display: none;">
+                    <label for="erase-cmd">Command:</label>
+                    <input type="text" id="erase-cmd" maxlength="1" placeholder="A">
+                </div>
+            </div>
+            
+            <!-- Hide Item Properties -->
+            <div id="hide-properties" style="display: none;">
+                <p>Hide makes the item with the specified index or command invisible.</p>
+                <div class="form-group">
+                    <label for="hide-type">Hide Type:</label>
+                    <select id="hide-type" onchange="toggleHideInputs()">
+                        <option value="idx">By Index</option>
+                        <option value="cmd">By Command</option>
+                    </select>
+                </div>
+                <div id="hide-idx-input" class="form-group">
+                    <label for="hide-idx">Index (≥ 1):</label>
+                    <input type="number" id="hide-idx" min="1" value="1">
+                </div>
+                <div id="hide-cmd-input" class="form-group" style="display: none;">
+                    <label for="hide-cmd">Command:</label>
+                    <input type="text" id="hide-cmd" maxlength="1" placeholder="A">
+                </div>
+            </div>
+            
+            <!-- Unhide Item Properties -->
+            <div id="unhide-properties" style="display: none;">
+                <p>Unhide makes a previously hidden item visible again.</p>
+                <div class="form-group">
+                    <label for="unhide-type">Unhide Type:</label>
+                    <select id="unhide-type" onchange="toggleUnhideInputs()">
+                        <option value="idx">By Index</option>
+                        <option value="cmd">By Command</option>
+                    </select>
+                </div>
+                <div id="unhide-idx-input" class="form-group">
+                    <label for="unhide-idx">Index (≥ 1):</label>
+                    <input type="number" id="unhide-idx" min="1" value="1">
+                </div>
+                <div id="unhide-cmd-input" class="form-group" style="display: none;">
+                    <label for="unhide-cmd">Command:</label>
+                    <input type="text" id="unhide-cmd" maxlength="1" placeholder="A">
+                </div>
+            </div>
+            
+            <!-- Insert Drawing Properties -->
+            <div id="insertDwg-properties" style="display: none;">
+                <div class="form-group">
+                    <label for="insertDwg-name">Drawing to Insert:</label>
+                    <select id="insertDwg-name">
+                        <option value="">Loading available drawings...</option>
+                    </select>
+                </div>
+                <!--
+                 <label for="insertDwg-name"><br>Set the (0,0) position in the Inserted Drawing<br>Positive values moves the inserted dwg left and up<br>Usually left as (0,0) and PushZero used instead</label>
+                 <div class="inline-group">
+                    <div class="half-width">
+                    <label for="insertDwg-xoffset">X zero:</label>
+                    <input type="number" id="insertDwg-xoffset" value="0">
+                    </div>
+                    <div class="half-width">
+                    <label for="insertDwg-yoffset">Y zero:</label>
+                    <input type="number" id="insertDwg-yoffset" value="0">
+                    </div>
+                </div>
+            -->
+            </div>
+            
+            <!-- Rectangle Properties -->
+            <div id="rectangle-properties" style="display: none;">
+                <div class="inline-group">
+                    <div class="half-width">
+                        <label for="rect-xoffset">X Position:</label>
+                        <input type="number" id="rect-xoffset" value="0" style="margin-top: 5px;">
+                    </div>
+                    <div class="half-width">
+                        <label for="rect-yoffset">Y Position:</label>
+                        <input type="number" id="rect-yoffset" value="0" style="margin-top: 5px;">
+                    </div>
+                </div>
+                <div class="inline-group">
+                    <div class="half-width">
+                        <label for="rect-width">Width:</label>
+                        <input type="number" id="rect-width" value="1">
+                    </div>
+                    <div class="half-width">
+                        <label for="rect-height">Height:</label>
+                        <input type="number" id="rect-height" value="1">
+                    </div>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="rect-style" value="true">
+                    <label for="rect-style">Filled</label>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="rect-centered" value="true">
+                    <label for="rect-centered">Centered</label>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="rect-corners" value="true">
+                    <label for="rect-corners">Rounded</label>
+                </div>
+            </div>
+            
+            <!-- Label Properties -->
+            <div id="label-properties" style="display: none;">
+                <div class="inline-group">
+                    <div class="half-width">
+                        <label for="label-xoffset">X Position:</label>
+                        <input type="number" id="label-xoffset" value="0" style="margin-top: 5px;">
+                    </div>
+                    <div class="half-width">
+                        <label for="label-yoffset">Y Position:</label>
+                        <input type="number" id="label-yoffset" value="0" style="margin-top: 5px;">
+                    </div>
+                </div>
+                <div class="form-group-row">
+                    <label_row for="label-text">Text:</label_row>
+                    <input type="text" id="label-text" value="Label Text" placeholder="Text to display">
+                </div>
+                <div class="inline-group">
+                    <div class="half-width">
+                        <label for="label-fontsize">Font Size:</label>
+                        <input type="number" id="label-fontsize" value="0" min="-24" max="24" step="1">
+                    </div>
+                    <div class="half-width">
+                        <label for="label-align">Alignment:</label>
+                        <select id="label-align">
+                            <option value="left">Left</option>
+                            <option value="center">Center</option>
+                            <option value="right">Right</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="inline-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="label-bold" value="true">
+                        <label for="label-bold">Bold</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="label-italic" value="true">
+                        <label for="label-italic">Italic</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="label-underline" value="true">
+                        <label for="label-underline">Underline</label>
+                    </div>
+                </div>
+                <div class="inline-group">
+                    <div class="half-width">
+                        <label for="label-value">Value:</label>
+                        <input type="text" id="label-value" placeholder="Optional" pattern="[0-9]*\.?[0-9]*">
+                    </div>
+                    <div class="half-width">
+                        <label for="label-decimals">Decimals:</label>
+                        <input type="number" id="label-decimals" min="-6" max="6" placeholder="">
+                    </div>
+                </div>
+                <div class="form-group-row">
+                    <label_row for="label-units">Units:</label_row>
+                    <input type="text" id="label-units" placeholder="Optional(e.g., mm, V, %)">
+                </div>
+            </div>
+            
+            <!-- Value Properties -->
+            <div id="value-properties" style="display: none;">
+                <div class="inline-group">
+                    <div class="half-width">
+                        <label for="value-xoffset">X Position:</label>
+                        <input type="number" id="value-xoffset" value="0" style="margin-top: 5px;">
+                    </div>
+                    <div class="half-width">
+                        <label for="value-yoffset">Y Position:</label>
+                        <input type="number" id="value-yoffset" value="0" style="margin-top: 5px;">
+                    </div>
+                </div>
+                <div class="form-group-row">
+                    <label_row for="value-text">Prefix Text:</label_row>
+                    <input type="text" id="value-text" value="Value: " placeholder="Text before the scaled value">
+                </div>
+                <div class="inline-group">
+                    <div class="half-width">
+                        <label for="value-fontsize">Font Size:</label>
+                        <input type="number" id="value-fontsize" value="0" min="-24" max="24" step="1">
+                    </div>
+                    <div class="half-width">
+                        <label for="value-align">Alignment:</label>
+                        <select id="value-align">
+                            <option value="left">Left</option>
+                            <option value="center">Center</option>
+                            <option value="right">Right</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="inline-group">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="value-bold" value="true">
+                        <label for="value-bold">Bold</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="value-italic" value="true">
+                        <label for="value-italic">Italic</label>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="value-underline" value="true">
+                        <label for="value-underline">Underline</label>
+                    </div>
+                </div>
+                <div class="form-group" style="border: 1px solid #ddd; padding: 10px; margin: 10px 0; background-color: #f9f9f9;">
+                    <label style="font-weight: bold; color: #333;">Value Scaling Parameters:</label>
+                    <div class="inline-group">
+                        <div class="half-width">
+                            <label for="value-intvalue">Integer Value:</label>
+                            <input type="number" id="value-intvalue" value="50" placeholder="Raw integer value">
+                        </div>
+                        <div class="half-width">
+                            <label for="value-decimals">Decimals:</label>
+                            <input type="number" id="value-decimals" value="2" min="-6" max="6">
+                        </div>
+                    </div>
+                    <div class="inline-group">
+                        <div class="half-width">
+                            <label for="value-min">Min Value:</label>
+                            <input type="number" id="value-min" value="0" placeholder="Input minimum">
+                        </div>
+                        <div class="half-width">
+                            <label for="value-max">Max Value:</label>
+                            <input type="number" id="value-max" value="100" placeholder="Input maximum">
+                        </div>
+                    </div>
+                    <div class="inline-group">
+                        <div class="half-width">
+                            <label for="value-displaymin">Display Min:</label>
+                            <input type="number" id="value-displaymin" value="0.0" step="any" placeholder="Output minimum">
+                        </div>
+                        <div class="half-width">
+                            <label for="value-displaymax">Display Max:</label>
+                            <input type="number" id="value-displaymax" value="1.0" step="any" placeholder="Output maximum">
+                        </div>
+                    </div>
+                    <div class="form-group-row">
+                        <label_row for="value-units">Units:</label_row>
+                        <input type="text" id="value-units" value="" placeholder="e.g., V, °C, %, etc.">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Circle Properties -->
+            <div id="circle-properties" style="display: none;">
+                <div class="inline-group">
+                    <div class="half-width">
+                        <label for="circle-xoffset">X Center:</label>
+                        <input type="number" id="circle-xoffset" value="0" step="any" style="margin-top: 5px;">
+                    </div>
+                    <div class="half-width">
+                        <label for="circle-yoffset">Y Center:</label>
+                        <input type="number" id="circle-yoffset" value="0" step="any" style="margin-top: 5px;">
+                    </div>
+                </div>
+                <div class="form-group-row">
+                    <label_row for="circle-radius">Radius:</label_row>
+                    <input type="number" id="circle-radius" value="1" min="0.1" step="any">
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="circle-filled" value="true">
+                    <label for="circle-filled">Filled</label>
+                </div>
+            </div>
+            
+            <!-- Arc Properties -->
+            <div id="arc-properties" style="display: none;">
+                <div class="inline-group">
+                    <div class="half-width">
+                        <label for="arc-xoffset">X Center:</label>
+                        <input type="number" id="arc-xoffset" value="0" step="any" style="margin-top: 5px;">
+                    </div>
+                    <div class="half-width">
+                        <label for="arc-yoffset">Y Center:</label>
+                        <input type="number" id="arc-yoffset" value="0" step="any" style="margin-top: 5px;">
+                    </div>
+                </div>
+                <div class="form-group-row">
+                    <label_row for="arc-radius">Radius:</label_row>
+                    <input type="number" id="arc-radius" value="1" min="0.1" step="any">
+                </div>
+                <div class="inline-group">
+                    <div class="half-width">
+                        <label for="arc-start">Start Angle (°):</label>
+                        <input type="number" id="arc-start" value="0" step="any" placeholder="0-360, +ve anti-clockwise">
+                    </div>
+                    <div class="half-width">
+                        <label for="arc-angle">Sweep Angle (°):</label>
+                        <input type="number" id="arc-angle" value="90" step="any" placeholder="+ve anti-clockwise, -ve clockwise">
+                    </div>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="arc-filled" value="true">
+                    <label for="arc-filled">Filled (creates pie slice)</label>
+                </div>
+            </div>
+            
+            <!-- Touch Zone Properties -->
+            <div id="touchZone-properties" style="display: none;">
+                <div class="inline-group">
+                    <div class="half-width">
+                        <label for="touchZone-xoffset">X Position:</label>
+                        <input type="number" id="touchZone-xoffset" value="0">
+                    </div>
+                    <div class="half-width">
+                        <label for="touchZone-yoffset">Y Position:</label>
+                        <input type="number" id="touchZone-yoffset" value="0">
+                    </div>
+                </div>
+                <div class="inline-group">
+                    <div class="half-width">
+                        <label for="touchZone-xsize">Width:</label>
+                        <input type="number" id="touchZone-xsize" value="5">
+                    </div>
+                    <div class="half-width">
+                        <label for="touchZone-ysize">Height:</label>
+                        <input type="number" id="touchZone-ysize" value="5">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="touchZone-name">Command Name (required):</label>
+                    <input type="text" id="touchZone-name" placeholder="Unique command name (e.g., cmd_c1, button1)" maxlength="50">
+                    <small style="color: #666; display: block; margin-top: 2px;">Auto-generated unique command name - can be edited</small>
+                </div>
+                <div class="form-group">
+                    <label for="touchZone-filter">Touch Filter:</label>
+                    <select id="touchZone-filter">
+                        <option value="0">TOUCH (0) - Default</option>
+                        <option value="1">DOWN (1)</option>
+                        <option value="2">DRAG (2)</option>
+                        <option value="4">UP (4)</option>
+                        <option value="8">CLICK (8)</option>
+                        <option value="16">PRESS (16) - Long Press</option>
+                        <option value="512">TOUCH_DISABLED (512)</option>
+                        <option value="3">DOWN + DRAG (1+2)</option>
+                        <option value="7">DOWN + DRAG + UP (1+2+4)</option>
+                        <option value="24">CLICK + PRESS (8+16)</option>
+                    </select>
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="touchZone-centered" value="true">
+                    <label for="touchZone-centered">Centered</label>
+                </div>
+                <div class="form-group" style="display: none;">
+                    <label for="touchZone-priority">Priority:</label>
+                    <input type="number" id="touchZone-priority" value="0" min="0">
+                </div>
+            </div>
+            
+            
+            
+            <!-- Common Properties -->
+            <div class="inline-group">
+                <div style="flex: 1; margin-right: 20px;">
+                    <label for="item-color">Color:</label>
+                    <input type="hidden" id="item-color" value="0">
+                    <div id="item-color-picker"></div>
+                </div>
+                <div style="flex: 0 0 auto;">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="item-idx-enable" onchange="toggleIndexName()">
+                        <label for="item-idx-enable">Use Index</label>
+                    </div>
+                    <input type="text" id="item-idx" style="display: none;">
+                    <input type="text" id="item-idx-name" style="max-width: 150px; margin-top: 5px; display: none;" placeholder="Index name (required)">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <button id="add-item-btn">Add Item</button>
+                <button id="cancel-btn" class="cancel-btn">Cancel</button>
+            </div>
+        </div>
+        
+        <div class="right-panel">
+            <h2>Drawing Preview</h2>
+            <div class="iframe-container">
+                <iframe id="preview-iframe"></iframe>
+            </div>
+        </div>
+    </div>
+
+    <script src="colorUtils.js"></script>
+    <script src="redraw.js"></script>
+    <script src="shared-iframe.js"></script>
+    <script src="add-item.js"></script>
+</body>
+</html>

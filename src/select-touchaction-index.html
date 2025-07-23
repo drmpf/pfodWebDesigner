@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<!--
+   select-touchaction-index.html
+ * (c)2025 Forward Computing and Control Pty. Ltd.
+ * NSW Australia, www.forward.com.au
+ * This code is not warranted to be fit for any purpose. You may only use it at your own risk.
+ * This generated code may be freely used for both private and commercial use
+ * provided this copyright is maintained.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Select Idx for touchAction Item</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            font-size: 66.7%;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 15px;
+        }
+        h1 {
+            margin: 0;
+            font-size: 1.8em;
+            color: #333;
+        }
+        .back-button {
+            padding: 8px 16px;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .back-button:hover {
+            background-color: #5a6268;
+        }
+        .description {
+            background-color: #e3f2fd;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2196f3;
+        }
+        .items-list {
+            max-height: 600px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            margin-bottom: 20px;
+        }
+        .item-row {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+            background-color: white;
+            transition: background-color 0.2s;
+        }
+        .item-row:hover {
+            background-color: #f8f9fa;
+        }
+        .item-index {
+            width: 80px;
+            text-align: center;
+            font-weight: bold;
+            color: #666;
+            font-size: 14px;
+        }
+        .item-type {
+            width: 40px;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .item-details {
+            flex: 1;
+            margin-left: 15px;
+            font-size: 12px;
+            color: #333;
+        }
+        .item-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: opacity 0.2s;
+        }
+        .btn:hover {
+            opacity: 0.8;
+        }
+        .btn-add {
+            background-color: #28a745;
+            color: white;
+        }
+        .btn-replace {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        .btn-show {
+            background-color: #17a2b8;
+            color: white;
+        }
+        .btn-show:active {
+            background-color: #138496;
+        }
+        .no-items {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-style: italic;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .section-header {
+            font-weight: bold;
+            color: #333;
+            padding: 10px 12px;
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #ddd;
+            margin: 0;
+        }
+        .main-content {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+        .items-section {
+            flex: 1;
+            min-width: 400px;
+        }
+        .preview-section {
+            flex: 1;
+            min-width: 400px;
+        }
+        .preview-container {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: white;
+            padding: 10px;
+            height: 600px;
+        }
+        .preview-header {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        .preview-iframe {
+            width: 100%;
+            height: calc(100% - 30px);
+            border: 1px solid #ccc;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 id="page-title">Select Idx for touchAction Item</h1>
+            <button class="back-button" id="back-btn">Back to Touch Actions</button>
+        </div>
+        
+        <div class="description">
+            <strong>Step 1 of 2:</strong> Select which indexed item should be replaced by your new touchAction item when the touchZone is triggered.
+            <br><br>
+            Click <span style="background: #ffc107; padding: 2px 6px; border-radius: 2px;">Replace on Touch</span> next to the item you want to replace.
+        </div>
+        
+        <div class="main-content">
+            <div class="items-section">
+                <div class="items-list" id="items-list">
+                    <div class="loading">Loading available indexed items...</div>
+                </div>
+            </div>
+            
+            <div class="preview-section">
+                <div class="preview-container">
+                    <div class="preview-header">Preview</div>
+                    <iframe id="preview-iframe" class="preview-iframe"></iframe>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="shared-iframe.js"></script>
+    <script src="select-touchaction-index.js"></script>
+</body>
+</html>
