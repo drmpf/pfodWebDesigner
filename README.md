@@ -1,8 +1,9 @@
 # pfodWeb Designer
-This is a web base design tool to create interactive and responsive GUIs that can be served from your micro to either pfodApp and pfodWeb.
+This is a web base design tool to create interactive and responsive GUIs that can be served from your micro to either pfodApp and pfodWeb.  
 <img src="./gif/LedNoOffGUI.gif"/>
-This animated gif shows a button controlling the ESP32 micro's led from a web page.  When the button is pressed, it immediately changes color to indicate it has been triggered.
-It also sends a command to the ESP32 to switch the LED. When the ESP32 responds, the message from the ESP32 updates the button's color and text.
+This animated gif shows a button controlling the ESP32 micro's led from a web page. 
+When the button is pressed, it immediately changes color to indicate it has been triggered.
+It also sends a command to the ESP32 to switch the LED. When the ESP32 responds, the message from the ESP32 updates the button's color and text.  
 The entire code for the webpage is served from the ESP32's web server.  No third party or internet access is required.
 
 # How-To
