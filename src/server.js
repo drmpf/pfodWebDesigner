@@ -17,6 +17,9 @@ const translator = require('./server_translator.js');
 const touchActionHandler = require('./touchActionHandler.js');
 const touchActionInputHandler = require('./touchActionInputHandler.js');
 
+// Import JS_VERSION constant from version.js
+const { JS_VERSION } = require('./version.js');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -1687,7 +1690,7 @@ function handleDrawingRequest(req, res, drawingName, ver, mode) {
                 
                 const response = {
                     pfodDrawing: 'update',
-                    js_ver: 'V1.0.0',
+                    js_ver: JS_VERSION,
                     version: drawingData.data.version,
                     refresh: drawingData.data.refresh || 0,
                     items: updateItems
@@ -1719,7 +1722,7 @@ function handleDrawingRequest(req, res, drawingName, ver, mode) {
             
             const emptyUpdate = {
                 pfodDrawing: 'update',
-                js_ver: 'V1.0.0',
+                js_ver: JS_VERSION,
                 version: drawingData.data.version,
                 refresh: drawingData.data.refresh,
                 items: []
@@ -1767,7 +1770,7 @@ function handleDrawingRequest(req, res, drawingName, ver, mode) {
         // Normal start response with full drawing data
         const response = {
             pfodDrawing: 'start',
-            js_ver: 'V1.0.0',
+            js_ver: JS_VERSION,
             version,
             ...responseData
         };
@@ -2097,7 +2100,7 @@ function handleEndPointDrawingRequest(req, res, drawingName, ver) {
     // but with the name 'add-item-endpoint' to satisfy app.js
     const response = {
         pfodDrawing: 'start',
-        js_ver: 'V1.0.0',             // Add JavaScript version
+        js_ver: JS_VERSION,              // Add JavaScript version
         version: req.query.version || 'null', // Use the version from the query if provided
         x: drawingData.x,             // Use the real drawing's dimensions
         y: drawingData.y, 
@@ -2134,7 +2137,7 @@ app.get('/api/drawings/:drawingName/export', (req, res) => {
         const { name, version, ...rest } = drawingData;
         const exportData = {
             pfodDrawing: "start",
-            js_ver: "V1.0.0",
+            js_ver: JS_VERSION,
             version,
             ...rest
         };
@@ -2869,3 +2872,4 @@ findAvailablePort(PORT, (err, availablePort) => {
         }
     });
 });
+

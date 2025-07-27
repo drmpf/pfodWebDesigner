@@ -7,6 +7,9 @@
  * provided this copyright is maintained.
  */
 
+// Get JS_VERSION from version.js
+const { JS_VERSION } = require('./version.js');
+
 function translateRawRectangle(rawRectString) {
     // Parse rectangle type from prefix
     let rectType = '';
@@ -1156,7 +1159,7 @@ function translateDwgResponse(cmd) {
     if (matchUpdate) {
         return {
             pfodDrawing: "update",
-            js_ver: "V1.0.0",
+            js_ver: JS_VERSION,
             more: matchUpdate[2] === 'm' ? true : false,
             raw_items: []
         };
@@ -1179,7 +1182,7 @@ function translateDwgResponse(cmd) {
 
     return {
         pfodDrawing: "start",
-        js_ver: "V1.0.0",
+        js_ver: JS_VERSION,
         version: version || "",
         x: cols ? parseInt(cols, 10) : undefined,
         y: rows ? parseInt(rows, 10) : undefined,

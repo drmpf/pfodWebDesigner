@@ -13,7 +13,7 @@
  * sendUpdate()
  */
  
-  const arduinoExportVers = "pfodWeb Designer Arduino Export V1.0.0"
+  const arduinoExportVers = "pfodWeb Designer Arduino Export V1.0.1"
      let filesToZip = [];
      let insertedDwgs = [];
      let mainDwgName;
@@ -147,10 +147,10 @@ class Dwg_${dwgName} : public pfodDrawing {
         }
         if (Array.isArray(drawingData.items)) {
             drawingData.items.forEach(item => {
-                if (!item || !item.cmd || !item.type || item.type !== 'touchZone' ) {
+                if (!item || !item.cmdName || !item.type || item.type !== 'touchZone' ) {
                   return;
                 }
-                arduinoCode += `    pfodAutoCmd ${item.cmd};\n`;                
+                arduinoCode += `    pfodAutoCmd ${item.cmdName};\n`;                
             });
         }
 arduinoCode += `\n`;
@@ -223,10 +223,10 @@ bool Dwg_${dwgName}::processDwgCmds() {
 // ======= processing Code block =======================
         if (Array.isArray(drawingData.items)) {
             drawingData.items.forEach(item => {
-                if (!item || !item.cmd || !item.type || item.type !== 'touchZone' ) {
+                if (!item || !item.cmdName || !item.type || item.type !== 'touchZone' ) {
                   return;
                 }
-                arduinoCode += `  if (parserPtr->dwgCmdEquals(${item.cmd})) { // handle touchZone ${item.cmdName}`;    
+                arduinoCode += `  if (parserPtr->dwgCmdEquals(${item.cmdName})) { // handle touchZone ${item.cmdName}`;    
 arduinoCode += `
     // parserPtr->printDwgCmdReceived(&Serial); // does nothing if passed NULL
     // add your cmd handling code here
@@ -423,17 +423,17 @@ arduinoCode += `    dwgsPtr->end();
                 return valueCode;
             
             case 'hide':
-                if (item.cmd) return `dwgsPtr->hide().cmd(${item.cmd}).send();`;
+                if (item.cmdName) return `dwgsPtr->hide().cmd(${item.cmdName}).send();`;
                 else if (item.idxName) return `dwgsPtr->hide().idx(${idxName}).send();`;
                 else return `// hide: no cmd or idx specified`;
             
             case 'unhide':
-                if (item.cmd) return `dwgsPtr->unhide().cmd(${item.cmd}).send();`;
+                if (item.cmdName) return `dwgsPtr->unhide().cmd(${item.cmdName}).send();`;
                 else if (item.idxName) return `dwgsPtr->unhide().idx(${idxName}).send();`;
                 else return `// unhide: no cmd or idx specified`;
             
             case 'touchzone':
-                let touchCode = `dwgsPtr->touchZone().cmd(${item.cmd})`;
+                let touchCode = `dwgsPtr->touchZone().cmd(${item.cmdName})`;
                 if (item.idx && item.idx !== 0) touchCode += `.idx(${item.idx})`; // this is the priority rather than an idx
                 if (item.centered === 'true' || item.centered === true) touchCode += '.centered()';
                 touchCode += `.size(${item.xSize || 1},${item.ySize || 1}).offset(${xOffset},${yOffset})`;
@@ -458,15 +458,15 @@ arduinoCode += `    dwgsPtr->end();
                         if (actionCode) {
                             // Remove .send() from the action code
                             const actionWithoutSend = actionCode.replace('.send();', '');
-                            touchActionStatements.push(`dwgsPtr->touchAction().cmd(${item.cmd}).action(${actionWithoutSend}).send();`);
+                            touchActionStatements.push(`dwgsPtr->touchAction().cmd(${item.cmdName}).action(${actionWithoutSend}).send();`);
                         }
                     });
                     return touchActionStatements.join('\n    ');
                 }
-                return `dwgsPtr->touchAction().cmd(${item.cmd}).action(dwgsPtr->rectangle().size(1,1)).send();`;
+                return `dwgsPtr->touchAction().cmd(${item.cmdName}).action(dwgsPtr->rectangle().size(1,1)).send();`;
             
             case 'touchactioninput':
-                let touchActionInputCode = `dwgsPtr->touchActionInput().cmd(${item.cmd}).prompt("${item.prompt || ''}")`;
+                let touchActionInputCode = `dwgsPtr->touchActionInput().cmd(${item.cmdName}).prompt("${item.prompt || ''}")`;
                 if (item.idxName) touchActionInputCode += `.textIdx(${item.idxName})`;
                 if (item.fontSize !== undefined && item.fontSize !== null) touchActionInputCode += `.fontSize(${item.fontSize})`;
                 if (item.color !== undefined && item.color !== null) touchActionInputCode += `.color(${convertColor(item.color)})`;
@@ -479,7 +479,7 @@ arduinoCode += `    dwgsPtr->end();
                 else return `// index: no idx specified`;
             
             case 'erase':
-                if (item.cmd) return `dwgsPtr->erase().cmd(${item.cmd}).send();`;
+                if (item.cmdName) return `dwgsPtr->erase().cmd(${item.cmdName}).send();`;
                 else if (item.idxName) return `dwgsPtr->erase().idx(${item.idxName}).send();`;
                 else return `// erase: no cmd or idx specified`;
             

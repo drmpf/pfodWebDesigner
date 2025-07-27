@@ -705,9 +705,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (item.cmdName !== undefined) {
             details.push(`cmdName: ${item.cmdName}`);
         }
-        if (item.cmd !== undefined) {
-            details.push(`(cmd: ${item.cmd})`);
-        }
+        // Note: cmd is non-visible (used by pfodWeb viewer but not displayed to user)
+        
         if (item.type == 'pushZero') {
           details.push(`(${item.x},${item.y}) scale:${item.scale}`);
         }

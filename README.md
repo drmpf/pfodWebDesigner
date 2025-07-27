@@ -17,5 +17,6 @@ This code may be freely used for both private and commercial use
 Provide this copyright is maintained.  
 
 # Revisions
+Version 1.0.1 fix for debug display and mainmenu updates  
 Version 1.0.0 initial release  
 

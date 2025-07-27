@@ -70,8 +70,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const pushY = document.getElementById('push-y');
     const pushScale = document.getElementById('push-scale');
     const insertDwgName = document.getElementById('insertDwg-name');
-   // const insertDwgXOffset = document.getElementById('insertDwg-xoffset');
- //   const insertDwgYOffset = document.getElementById('insertDwg-yoffset');
+    const insertDwgXOffset = document.getElementById('insertDwg-xoffset');
+    const insertDwgYOffset = document.getElementById('insertDwg-yoffset');
     const labelXOffset = document.getElementById('label-xoffset');
     const labelYOffset = document.getElementById('label-yoffset');
     const labelText = document.getElementById('label-text');
@@ -352,7 +352,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add event listeners for all form inputs to update the preview
     [lineX, lineY, lineXOffset, lineYOffset, rectXOffset, rectYOffset, 
      rectWidth, rectHeight, rectStyle, rectCentered, rectCorners, 
-     pushX, pushY, pushScale, insertDwgName,// insertDwgXOffset, insertDwgYOffset,
+     pushX, pushY, pushScale, insertDwgName,insertDwgXOffset, insertDwgYOffset,
      labelXOffset, labelYOffset, labelText, labelFontSize, labelAlign, labelBold, labelItalic, labelUnderline, labelValue, labelDecimals, labelUnits,
      valueXOffset, valueYOffset, valueText, valueFontSize, valueAlign, valueBold, valueItalic, valueUnderline,
      valueIntValue, valueMin, valueMax, valueDisplayMin, valueDisplayMax, valueDecimals, valueUnits,
@@ -787,11 +787,11 @@ document.addEventListener('DOMContentLoaded', () => {
         hideColorPicker();
         
         if ((editingItem) && (editingItem.type == 'insertDwg')) {
-       //   insertDwgXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:0);
-       //   insertDwgYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:0);
+          insertDwgXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:0);
+          insertDwgYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:0);
         } else {
-      //    insertDwgXOffset.value = 0;
-      //    insertDwgYOffset.value = 0;
+          insertDwgXOffset.value = 0;
+          insertDwgYOffset.value = 0;
         }
         // Refresh available drawings and update preview when done
         loadAvailableDrawings(() => {
@@ -1048,8 +1048,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 
             case 'insertDwg':
                 if (insertDwgName && item.drawingName !== undefined) insertDwgName.value = item.drawingName;
-           //     if (insertDwgXOffset && item.xOffset !== undefined) insertDwgXOffset.value = item.xOffset;
-           //     if (insertDwgYOffset && item.yOffset !== undefined) insertDwgYOffset.value = item.yOffset;
+                if (insertDwgXOffset && item.xOffset !== undefined) insertDwgXOffset.value = item.xOffset;
+                if (insertDwgYOffset && item.yOffset !== undefined) insertDwgYOffset.value = item.yOffset;
                 break;
                 
             case 'label':
@@ -1447,8 +1447,8 @@ document.addEventListener('DOMContentLoaded', () => {
             tempItem = {
                 ...tempItem,
                 drawingName: selectedDrawingName,
-                xOffset: 0,//parseFloat(insertDwgXOffset.value || 0),
-                yOffset: 0//parseFloat(insertDwgYOffset.value || 0)
+                xOffset: parseFloat(insertDwgXOffset.value || 0),
+                yOffset: parseFloat(insertDwgYOffset.value || 0)
             };
         } else if (itemType === 'pushZero') {
             tempItem = {
@@ -1672,8 +1672,8 @@ document.addEventListener('DOMContentLoaded', () => {
             newItem = {
                 ...newItem,
                 drawingName: selectedDrawingName,
-                xOffset: 0,//parseFloat(insertDwgXOffset.value || 0),
-                yOffset: 0 //parseFloat(insertDwgYOffset.value || 0)
+                xOffset: parseFloat(insertDwgXOffset.value || 0),
+                yOffset: parseFloat(insertDwgYOffset.value || 0)
             };
         } else if (itemType === 'pushZero') {
             newItem = {
