@@ -117,11 +117,64 @@ document.addEventListener('DOMContentLoaded', () => {
     const itemIdxEnable = document.getElementById('item-idx-enable');
     const itemIdx = document.getElementById('item-idx');
     const itemIdxName = document.getElementById('item-idx-name');
+    const chooseColorBtn = document.getElementById('choose-color-btn');
+    const blackWhiteBtn = document.getElementById('black-white-btn');
+    const colorPicker = document.getElementById('item-color-picker');
     
-    // Initialize color picker for item color
+    // Initialize color picker for item color (will be updated with proper default after drawingData loads)
     if (typeof createColorPicker !== 'undefined') {
-        createColorPicker('item-color-picker', 'item-color', 15);
+        createColorPicker('item-color-picker', 'item-color', 15); // Temporary default, will be updated
     }
+    
+    // Color mode tracking - true for Black/White mode, false for Choose Color mode
+    let isBlackWhiteMode = true; // Default to Black/White mode for new items
+    
+    // Initialize button states for new items (Black/White highlighted by default)
+    function initializeColorButtons() {
+        if (!isEditMode) {
+            // For new items, start with Black/White mode
+            setBlackWhiteMode(true);
+        }
+    }
+    
+    // Function to set Black/White mode
+    function setBlackWhiteMode(enabled) {
+        isBlackWhiteMode = enabled;
+        if (enabled) {
+            // Black/White mode: highlight Black/White button, grey out Choose Color
+            blackWhiteBtn.style.backgroundColor = '#007bff';
+            chooseColorBtn.style.backgroundColor = '#6c757d';
+            colorPicker.style.display = 'none';
+            // Set color to getBlackWhite result or -1
+            if (drawingData) {
+                const bwColor = getBlackWhite(drawingData.color);
+                itemColor.value = -1; // Use -1 to indicate Black/White mode
+            }
+        } else {
+            // Choose Color mode: highlight Choose Color button, grey out Black/White
+            chooseColorBtn.style.backgroundColor = '#007bff';
+            blackWhiteBtn.style.backgroundColor = '#6c757d';
+            colorPicker.style.display = 'block';
+            // Update color value to currently displayed color when switching to COLOR mode
+            if (drawingData && itemColor) {
+                const currentDisplayedColor = getBlackWhite(drawingData.color);
+                itemColor.value = currentDisplayedColor;
+                updateColorPickerDisplay('item-color', currentDisplayedColor);
+            }
+        }
+        // Note: updatePreview() is not called here to avoid resetting form values during edit mode
+    }
+    
+    // Button click handlers
+    chooseColorBtn.addEventListener('click', () => {
+        setBlackWhiteMode(false);
+        updatePreview(); // Update preview when user manually switches modes
+    });
+    
+    blackWhiteBtn.addEventListener('click', () => {
+        setBlackWhiteMode(true);
+        updatePreview(); // Update preview when user manually switches modes
+    });
     
     // Edit mode variables (moved up to avoid initialization errors)
     let isEditMode = editIndex !== null && editIndex !== undefined && editIndex !== '';
@@ -131,6 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let drawingData = null; // Drawing data
     let canvasWidth = 50; // Canvas width 
     let canvasHeight = 50; // Canvas height
+    let isFirstDrawingDataLoad = true; // Flag to track first load for color picker reset
     
     // Function to toggle index name field visibility
     window.toggleIndexName = function() {
@@ -293,9 +347,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeDrawingAndIframe();
     
     
-    // Fetch drawing information to get canvas size
-    fetchDrawingInfo();
-    
     // Set up event listeners (except for itemTypeDropdown if in edit mode)
     if (!isEditMode) {
         itemTypeDropdown.addEventListener('change', handleItemTypeChange);
@@ -306,6 +357,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // If in edit mode, load the item being edited
     if (isEditMode) {
         loadEditingItem();
+    } else {
+        // Only fetch drawing information when adding new items (not editing existing ones)
+        fetchDrawingInfo();
     }
     
     
@@ -616,15 +670,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
         lineProperties.style.display = 'block';
         if (editingItem) {
-          lineX.value = (isDefinedAndNotNull(editingItem.xSize)?editingItem.xSize:1);
-          lineY.value = (isDefinedAndNotNull(editingItem.ySize)?editingItem.ySize:1);
-          lineXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:Math.floor(canvasWidth / 2));
-          lineYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:Math.floor(canvasHeight / 2));
+          lineX.value = (isDefinedAndNotNull(editingItem.xSize)?editingItem.xSize:Math.floor(canvasWidth / 2));
+          lineY.value = (isDefinedAndNotNull(editingItem.ySize)?editingItem.ySize:Math.floor(canvasHeight / 2));
+          lineXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:0);// Math.floor(canvasWidth / 2));
+          lineYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:0);// Math.floor(canvasHeight / 2));
         } else {
-            lineX.value = 1;
-            lineY.value = 1;
-            lineXOffset.value = Math.floor(canvasWidth / 2);
-            lineYOffset.value = Math.floor(canvasHeight / 2);
+            lineX.value = Math.floor(canvasWidth / 2);
+            lineY.value = Math.floor(canvasHeight / 2);
+            lineXOffset.value = 1;// Math.floor(canvasWidth / 2);
+            lineYOffset.value = 2;// for text // Math.floor(canvasHeight / 2);
        }
     }
     
@@ -634,16 +688,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (editingItem) {
           rectWidth.value = (isDefinedAndNotNull(editingItem.xSize)?editingItem.xSize:1);
           rectHeight.value = (isDefinedAndNotNull(editingItem.ySize)?editingItem.ySize:1);
-          rectXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:Math.floor(canvasWidth / 2));
-          rectYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:Math.floor(canvasHeight / 2));
+          rectXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:0);// Math.floor(canvasWidth / 2));
+          rectYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:0);// Math.floor(canvasHeight / 2));
             rectStyle.checked = checkBool(editingItem.filled);
             rectCentered.checked = checkBool(editingItem.centered);
             rectCorners.checked = checkBool(editingItem.rounded);
         } else {
-            rectXOffset.value = Math.floor(canvasWidth / 2);
-            rectYOffset.value = Math.floor(canvasHeight / 2);
-            rectWidth.value = 1;
-            rectHeight.value = 1;
+            rectXOffset.value = 0;// Math.floor(canvasWidth / 2);
+            rectYOffset.value = 0;// Math.floor(canvasHeight / 2);
+            rectWidth.value =  Math.floor(canvasWidth / 2);
+            rectHeight.value = Math.floor(canvasHeight / 2);
             rectStyle.checked = true; // filled
             rectCentered.checked = false;
             rectCorners.checked = false; // not rounded
@@ -654,8 +708,8 @@ document.addEventListener('DOMContentLoaded', () => {
         //console.warn(`setupLabelItem `,JSON.stringify(editingItem,null,2));
         labelProperties.style.display = 'block';
         if (editingItem) {
-          labelXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:Math.floor(canvasWidth / 2));
-          labelYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:Math.floor(canvasHeight / 2));
+          labelXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:0);// Math.floor(canvasWidth / 2));
+          labelYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:0);// Math.floor(canvasHeight / 2));
           labelText.value = (isDefinedAndNotNull(editingItem.text)?editingItem.text:'Text');
           labelFontSize.value = (isDefinedAndNotNull(editingItem.fontSize)?editingItem.fontSize:0);
           labelAlign.value = (isDefinedAndNotNull(editingItem.align)?editingItem.align:'left');
@@ -666,8 +720,8 @@ document.addEventListener('DOMContentLoaded', () => {
           labelDecimals.value = (isDefinedAndNotNull(editingItem.decimals)?editingItem.decimals:2);
           labelUnits.value = (isDefinedAndNotNull(editingItem.units)?editingItem.units:'');            
         } else  {
-            labelXOffset.value = Math.floor(canvasWidth / 4);
-            labelYOffset.value = Math.floor(canvasHeight / 4);
+            labelXOffset.value = 0;// Math.floor(canvasWidth / 4);
+            labelYOffset.value = 2;// Math.floor(canvasHeight / 4);
             labelText.value = 'Text';
             labelFontSize.value = 0;
             labelAlign.value = 'left';
@@ -684,8 +738,8 @@ document.addEventListener('DOMContentLoaded', () => {
         //console.warn(`setupValueItem `,JSON.stringify(editingItem,null,2));
         valueProperties.style.display = 'block';
         if (editingItem) {
-          valueXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:Math.floor(canvasWidth / 2));
-          valueYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:Math.floor(canvasHeight / 2));
+          valueXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:0);// Math.floor(canvasWidth / 2));
+          valueYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:0);// Math.floor(canvasHeight / 2));
           valueText.value = (isDefinedAndNotNull(editingItem.text)?editingItem.text:'Text');
           valueFontSize.value = (isDefinedAndNotNull(editingItem.fontSize)?editingItem.fontSize:0);
           valueAlign.value = (isDefinedAndNotNull(editingItem.align)?editingItem.align:'left');
@@ -701,8 +755,8 @@ document.addEventListener('DOMContentLoaded', () => {
             valueDecimals.value = (isDefinedAndNotNull(editingItem.decimals)?editingItem.decimals:2);
             valueUnits.value = (isDefinedAndNotNull(editingItem.units)?editingItem.units:'');            
         } else  {
-            valueXOffset.value = Math.floor(canvasWidth / 4);
-            valueYOffset.value = Math.floor(canvasHeight / 4);
+            valueXOffset.value = 0;// Math.floor(canvasWidth / 4);
+            valueYOffset.value = 2;// Math.floor(canvasHeight / 4);
             valueText.value = 'Text';
             valueFontSize.value = 0;
             valueAlign.value = 'left';
@@ -722,14 +776,14 @@ document.addEventListener('DOMContentLoaded', () => {
     function setupCircleItem() {
         circleProperties.style.display = 'block';
         if (editingItem) {
-          circleXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:Math.floor(canvasWidth / 2));
-          circleYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:Math.floor(canvasHeight / 2));
+          circleXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:0);// Math.floor(canvasWidth / 2));
+          circleYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:0);// Math.floor(canvasHeight / 2));
           circleRadius.value = (isDefinedAndNotNull(editingItem.radius)?editingItem.radius:5);
           circleFilled.checked = checkBool(editingItem.filled);
         } else {
-            circleXOffset.value = Math.floor(canvasWidth / 2);
-            circleYOffset.value = Math.floor(canvasHeight / 2);
-            circleRadius.value = 5;
+            circleXOffset.value = min(Math.floor(canvasHeight / 2),Math.floor(canvasWidth / 2));
+            circleYOffset.value = min(Math.floor(canvasHeight / 2),Math.floor(canvasWidth / 2));
+            circleRadius.value = min(Math.floor(canvasHeight / 2),Math.floor(canvasWidth / 2));
             circleFilled.checked = false;
         }
     }
@@ -737,18 +791,18 @@ document.addEventListener('DOMContentLoaded', () => {
     function setupArcItem() {
         arcProperties.style.display = 'block';
         if (editingItem) {
-          arcXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:Math.floor(canvasWidth / 2));
-          arcYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:Math.floor(canvasHeight / 2));
+          arcXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:0);// Math.floor(canvasWidth / 2));
+          arcYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:0);// Math.floor(canvasHeight / 2));
           arcRadius.value = (isDefinedAndNotNull(editingItem.radius)?editingItem.radius:5);
           arcFilled.checked = checkBool(editingItem.filled);
           arcStart.value = (isDefinedAndNotNull(editingItem.start)?editingItem.start:0);
-          arcAngle.value = (isDefinedAndNotNull(editingItem.angle)?editingItem.angle:90);
+          arcAngle.value = (isDefinedAndNotNull(editingItem.angle)?editingItem.angle:-90);
         } else {
-            arcXOffset.value = Math.floor(canvasWidth / 2);
-            arcYOffset.value = Math.floor(canvasHeight / 2);
-            arcRadius.value = 5;
+            arcXOffset.value = min(Math.floor(canvasHeight / 2),Math.floor(canvasWidth / 2));// Math.floor(canvasWidth / 2);
+            arcYOffset.value = min(Math.floor(canvasHeight / 2),Math.floor(canvasWidth / 2));// Math.floor(canvasHeight / 2);
+            arcRadius.value = min(Math.floor(canvasHeight / 2),Math.floor(canvasWidth / 2));
             arcStart.value = 0;
-            arcAngle.value = 90;
+            arcAngle.value = -90;
             arcFilled.checked = false;
         }
     }
@@ -763,19 +817,19 @@ document.addEventListener('DOMContentLoaded', () => {
             touchZoneName.value = uniqueCommandName;
             
             // Set position defaults only if canvas dimensions are available
-            touchZoneXOffset.value = Math.floor(canvasWidth / 2);
-            touchZoneYOffset.value = Math.floor(canvasHeight / 2);
-            touchZoneXSize.value = 5;
-            touchZoneYSize.value = 5;
+            touchZoneXOffset.value = 1;// Math.floor(canvasWidth / 2);
+            touchZoneYOffset.value = 2;// Math.floor(canvasHeight / 2);
+            touchZoneXSize.value = Math.floor(canvasWidth / 2);;
+            touchZoneYSize.value = Math.floor(canvasHeight / 2);;
             touchZoneFilter.value = 0; // TOUCH - default
-            touchZoneCentered.checked = true;
+            touchZoneCentered.checked = false;
             touchZonePriority.value = 0; // Default priority
         } else {
         //  touchZoneName.value = editingItem.cmdName || generateUniqueTouchZoneCommandName();
           touchZoneXSize.value = (isDefinedAndNotNull(editingItem.xSize)?editingItem.xSize:5);
           touchZoneYSize.value = (isDefinedAndNotNull(editingItem.ySize)?editingItem.ySize:5);
-          touchZoneXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:Math.floor(canvasWidth / 2));
-          touchZoneYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:Math.floor(canvasHeight / 2));
+          touchZoneXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:1);// Math.floor(canvasWidth / 2));
+          touchZoneYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:2);// Math.floor(canvasHeight / 2));
           touchZoneCentered.checked =  checkBool(editingItem.centered);
           touchZoneFilter.value = (isDefinedAndNotNull(editingItem.filter)?editingItem.filter:0);
           touchZonePriority.value = (isDefinedAndNotNull(editingItem.priority)?editingItem.priority:0);
@@ -868,6 +922,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 canvasWidth = data.canvasWidth || data.x || 100;
                 canvasHeight = data.canvasHeight || data.y || 100;
                 
+                // Reset color picker to proper default on first load
+                if (isFirstDrawingDataLoad) {
+                    const correctColor = getBlackWhite(drawingData.color);
+                    const itemColor = document.getElementById('item-color');
+                    if (itemColor) {
+                        if (!isEditMode) {
+                            // For new items, initialize in Black/White mode
+                            itemColor.value = -1; // -1 indicates Black/White mode
+                            setBlackWhiteMode(true);
+                        } else {
+                            // For editing existing items - logic will be handled in populateFormFieldsForItem
+                            itemColor.value = correctColor;
+                            updateColorPickerDisplay('item-color', correctColor);
+                        }
+                    }
+                    isFirstDrawingDataLoad = false;
+                }
+                
                 console.log(`Loaded drawing info: ${canvasWidth}x${canvasHeight}`);
                 
                 // Update the page title to include drawing name and size
@@ -915,11 +987,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         })
         .then(response => response.json())
-        .then(drawingData => {
-            if (!drawingData.items || !drawingData.items[editIndex]) {
+        .then(fetchedDrawingData => {
+            if (!fetchedDrawingData.items || !fetchedDrawingData.items[editIndex]) {
                 alert(`Item at index ${editIndex} not found`);
                 return;
             }
+            
+            // Set global drawingData and extract canvas dimensions (needed for edit mode)
+            drawingData = fetchedDrawingData;
+            canvasWidth = fetchedDrawingData.canvasWidth || fetchedDrawingData.x || 100;
+            canvasHeight = fetchedDrawingData.canvasHeight || fetchedDrawingData.y || 100;
+            console.log(`Loaded canvas size from drawing data: ${canvasWidth}x${canvasHeight}`);
             
             editingItem = drawingData.items[editIndex];
             console.log('Loaded item for editing:', editingItem);
@@ -984,16 +1062,28 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Helper function to populate form fields (separated from async dropdown loading)
     function populateFormFieldsForItem(item) {
-        // Populate common fields
-        if (itemColor) {
+        // Populate common fields (skip color for touchZone items, and skip defaults when editing existing items)
+        if (itemColor && item.type !== 'touchZone') {
           if (item.color !== undefined) {
-            itemColor.value = item.color;
-          } else {
-            itemColor.value = 15;
-            item.color = 15;
+            if (item.color === -1) {
+                // Black/White mode for existing item
+                setBlackWhiteMode(true);
+                itemColor.value = -1;
+            } else {
+                // Choose Color mode for existing item
+                setBlackWhiteMode(false);
+                itemColor.value = item.color;
+                // Update color picker display
+                updateColorPickerDisplay('item-color', item.color);
+            }
+          } else if (!isEditMode) {
+            // Only calculate default color when adding new items, not when editing existing ones
+            const defaultColor = getBlackWhite(drawingData.color);
+            itemColor.value = defaultColor;
+            item.color = defaultColor;
+            // Update color picker display
+            updateColorPickerDisplay('item-color', item.color);
           }
-          // Update color picker display
-          updateColorPickerDisplay('item-color', item.color);
         }
         if (item.indexed) {
             itemIdxEnable.checked = true;
@@ -1320,7 +1410,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Add color for line, rectangle, label, value, circle, and arc only (touchZone, index don't need color)
         if (itemType === 'line' || itemType === 'rectangle' || itemType === 'label' || itemType === 'value' || itemType === 'circle' || itemType === 'arc') {
-            tempItem.color = isNaN(parseInt(itemColor.value))? 15 : parseInt(itemColor.value);
+            if (isBlackWhiteMode || itemColor.value == -1) {
+                tempItem.color = -1; // Black/White mode
+            } else {
+                tempItem.color = isNaN(parseInt(itemColor.value))? getBlackWhite(drawingData.color) : parseInt(itemColor.value);
+            }
         }
         // Push, pop and insertDwg items never get an idx value
         
@@ -1553,7 +1647,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Add color for line, rectangle, label, value, circle, and arc only (touchZone, index don't need color)
         if (itemType === 'line' || itemType === 'rectangle' || itemType === 'label' || itemType === 'value' || itemType === 'circle' || itemType === 'arc') {
-            newItem.color = isNaN(parseInt(itemColor.value))? 15 : parseInt(itemColor.value);
+            if (isBlackWhiteMode || itemColor.value == -1) {
+                newItem.color = -1; // Black/White mode
+            } else {
+                newItem.color = isNaN(parseInt(itemColor.value))? getBlackWhite(drawingData.color) : parseInt(itemColor.value);
+            }
         }
         // Push, pop and insertDwg items never get an idx value
         
@@ -1974,6 +2072,81 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             // No temporary drawing to cancel
             window.location.href = `/edit-drawing.html?drawing=${encodeURIComponent(drawingName)}`;
+        }
+    }
+    
+    // Auto Save functionality - fetch override to trigger JSON saves when Auto Save is enabled
+    const originalFetch = window.fetch;
+    window.fetch = function(...args) {
+        const [url, options] = args;
+        
+        // Check if this is an accept operation and auto save is enabled
+        const autoSaveEnabled = localStorage.getItem('autoSaveEnabled') !== 'false';
+        const shouldAutoSave = autoSaveEnabled && (
+            // Accept changes from item/touchZone editing
+            (typeof url === 'string' && url.includes('/accept'))
+        );
+        
+        if (typeof url === 'string' && (url.includes('/accept') || url.includes('/temp-update'))) {
+            console.log(`[AUTO_SAVE_DEBUG] URL: ${url}, shouldAutoSave: ${shouldAutoSave}, autoSaveEnabled: ${autoSaveEnabled}`);
+        }
+        
+        const result = originalFetch.apply(this, args);
+        
+        // If this was an accept operation and auto save is enabled, trigger save after successful response  
+        if (shouldAutoSave) {
+            result.then(response => {
+                console.log(`[AUTO_SAVE_DEBUG] Accept response ok: ${response.ok}`);
+                if (response.ok) {
+                    // Capture drawingName in closure to avoid scope issues
+                    const targetDrawingName = drawingName;
+                    console.log(`[AUTO_SAVE_DEBUG] Will save drawing: ${targetDrawingName}`);
+                    
+                    // Save immediately since page will redirect soon
+                    const currentAutoSave = localStorage.getItem('autoSaveEnabled') !== 'false';
+                    if (currentAutoSave && targetDrawingName) {
+                        console.log('Auto Save enabled - saving item/touchZone changes as JSON');
+                        saveDrawingAsJson(targetDrawingName);
+                    } else {
+                        console.log(`[AUTO_SAVE_DEBUG] Not saving - autoSave: ${currentAutoSave}, drawingName: ${targetDrawingName}`);
+                    }
+                }
+            }).catch(error => {
+                console.log(`[AUTO_SAVE_DEBUG] Accept error:`, error);
+                // Ignore fetch errors for auto save purposes
+            });
+        }
+        
+        return result;
+    };
+    
+    // Function to save drawing as JSON file
+    function saveDrawingAsJson(drawingName) {
+        console.log(`[AUTO_SAVE_DEBUG] saveDrawingAsJson called with: ${drawingName}`);
+        if (!drawingName) {
+            console.log(`[AUTO_SAVE_DEBUG] No drawing name provided, returning`);
+            return;
+        }
+        
+        try {
+            console.log(`[AUTO_SAVE_DEBUG] Exporting drawing "${drawingName}" as JSON`);
+            
+            // Create download link and download the file
+            const downloadLink = document.createElement('a');
+            downloadLink.href = `/api/drawings/${drawingName}/export`;
+            downloadLink.download = `${drawingName}.json`;
+            
+            console.log(`[AUTO_SAVE_DEBUG] Created download link: ${downloadLink.href}`);
+            
+            // Append to body, click to download, then remove
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            
+            console.log(`[AUTO_SAVE_DEBUG] Drawing "${drawingName}" export triggered successfully`);
+        } catch (error) {
+            console.error(`[AUTO_SAVE_DEBUG] Error exporting drawing "${drawingName}":`, error);
+            // Don't show alert here since this is automatic - just log the error
         }
     }
     

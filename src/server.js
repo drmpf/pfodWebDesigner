@@ -2694,10 +2694,14 @@ app.post('/api/drawings/import', (req, res) => {
         }
         
         // Validate drawing data
-        if (!drawingData.x || !drawingData.y || !drawingData.color) {
+        if (drawingData.x === undefined || drawingData.y === undefined || drawingData.color === undefined) {
+            const missing = [];
+            if (drawingData.x === undefined) missing.push('x (width)');
+            if (drawingData.y === undefined) missing.push('y (height)');
+            if (drawingData.color === undefined) missing.push('color (background)');
             return res.status(400).json({ 
                 success: false, 
-                error: 'Invalid drawing data: missing required properties' 
+                error: `Invalid drawing data: missing required properties: ${missing.join(', ')}` 
             });
         }
         

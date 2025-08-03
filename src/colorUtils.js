@@ -60,6 +60,60 @@ const XTERM_COLORS = [
     '#bcbcbc', '#c6c6c6', '#d0d0d0', '#dadada', '#e4e4e4', '#eeeeee'
 ];
 
+
+function getBlackWhite(color) {
+    // Convert color to RGB values
+    function getRGB(color) {
+        // Handle hex colors
+        if (typeof color === 'string' && color.startsWith('#')) {
+            const hex = color.slice(1);
+            const r = parseInt(hex.substr(0, 2), 16);
+            const g = parseInt(hex.substr(2, 2), 16);
+            const b = parseInt(hex.substr(4, 2), 16);
+            return [r, g, b];
+        }
+        
+        // Handle color numbers - convert to hex first, then to RGB
+        const hexColor = getColorHex(color);
+        const hex = hexColor.slice(1);
+        const r = parseInt(hex.substr(0, 2), 16);
+        const g = parseInt(hex.substr(2, 2), 16);
+        const b = parseInt(hex.substr(4, 2), 16);
+        return [r, g, b];
+    }
+    
+    // Calculate relative luminance
+    function getLuminance(r, g, b) {
+        const [rs, gs, bs] = [r, g, b].map(c => {
+            c = c / 255;
+            return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+        });
+        return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
+    }
+    
+    // Calculate contrast ratio between two colors
+    function getContrastRatio(lum1, lum2) {
+        const lighter = Math.max(lum1, lum2);
+        const darker = Math.min(lum1, lum2);
+        return (lighter + 0.05) / (darker + 0.05);
+    }
+    
+    const [r, g, b] = getRGB(color);
+    const colorLuminance = getLuminance(r, g, b);
+    
+    // Luminance values for pure black and white
+    const blackLuminance = 0;
+    const whiteLuminance = 1;
+    
+    // Calculate contrast ratios
+    const contrastWithBlack = getContrastRatio(colorLuminance, blackLuminance);
+    const contrastWithWhite = getContrastRatio(colorLuminance, whiteLuminance);
+    
+    // Return the color number with higher contrast
+    return contrastWithBlack > contrastWithWhite ? 0 : 15; // BLACK (0) : WHITE (15)
+}
+
+
 function getColorHex(colorNumber) {
     if (colorNumber < 0 || colorNumber > 255) {
         return '#000000'; // Default to black for invalid numbers

@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const viewDrawingBtn = document.getElementById('view-drawing-btn');
     const editDrawingBtn = document.getElementById('edit-drawing-btn');
     const copyDrawingBtn = document.getElementById('copy-drawing-btn');
-    const saveDrawingBtn = document.getElementById('save-drawing-btn');
+   // const saveDrawingBtn = document.getElementById('save-drawing-btn');
     const arduinoExportBtn = document.getElementById('arduino-export-btn');
     const deleteDrawingBtn = document.getElementById('delete-drawing-btn');
     
@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (viewDrawingBtn) viewDrawingBtn.disabled = true;
     if (editDrawingBtn) editDrawingBtn.disabled = true;
     if (copyDrawingBtn) copyDrawingBtn.disabled = true;
-    if (saveDrawingBtn) saveDrawingBtn.disabled = true;
+  //  if (saveDrawingBtn) saveDrawingBtn.disabled = true;
     if (arduinoExportBtn) arduinoExportBtn.disabled = true;
     if (deleteDrawingBtn) deleteDrawingBtn.disabled = true;
     
@@ -180,7 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (viewDrawingBtn) viewDrawingBtn.disabled = true;
         if (editDrawingBtn) editDrawingBtn.disabled = true;
         if (copyDrawingBtn) copyDrawingBtn.disabled = true; 
-        if (saveDrawingBtn) saveDrawingBtn.disabled = true;
+ //       if (saveDrawingBtn) saveDrawingBtn.disabled = true;
         if (arduinoExportBtn) arduinoExportBtn.disabled = true;
         if (deleteDrawingBtn) deleteDrawingBtn.disabled = true;
     }
@@ -295,7 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (viewDrawingBtn) viewDrawingBtn.disabled = true;
             if (editDrawingBtn) editDrawingBtn.disabled = true;
             if (copyDrawingBtn) copyDrawingBtn.disabled = true;
-            if (saveDrawingBtn) saveDrawingBtn.disabled = true;
+   //         if (saveDrawingBtn) saveDrawingBtn.disabled = true;
             if (arduinoExportBtn) arduinoExportBtn.disabled = true;
             if (deleteDrawingBtn) deleteDrawingBtn.disabled = true;
         }
@@ -442,7 +442,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
-    
+ 
+    /**
     saveDrawingBtn.addEventListener('click', async function() {
         if (selectedDrawingName) {
             try {
@@ -469,7 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
-    
+    **/
     arduinoExportBtn.addEventListener('click', async function() {
         if (selectedDrawingName) {
             try {
@@ -540,14 +541,34 @@ document.addEventListener('DOMContentLoaded', () => {
             // Create backup filename
             const backupFilename = `${drawingName}_deleted.json`;
             
-            // Create backup download
-            const backupLink = document.createElement('a');
-            backupLink.href = `/api/drawings/${drawingName}/export?filename=${backupFilename}`;
-            backupLink.download = backupFilename;
-            document.body.appendChild(backupLink);
-            backupLink.click();
-            document.body.removeChild(backupLink);
-            deleteDrawingFromServer(drawingName);
+            // Fetch the export data first, then trigger download and deletion
+            fetch(`/api/drawings/${drawingName}/export?filename=${backupFilename}`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Export failed: ${response.status}`);
+                    }
+                    return response.text();
+                })
+                .then(exportData => {
+                    // Create and trigger download with the fetched data
+                    const blob = new Blob([exportData], { type: 'application/json' });
+                    const downloadUrl = URL.createObjectURL(blob);
+                    const backupLink = document.createElement('a');
+                    backupLink.href = downloadUrl;
+                    backupLink.download = backupFilename;
+                    document.body.appendChild(backupLink);
+                    backupLink.click();
+                    document.body.removeChild(backupLink);
+                    URL.revokeObjectURL(downloadUrl);
+                    
+                    // Only delete after successful backup
+                    console.log(`Step 1 completed: Backup saved as ${backupFilename}`);
+                    deleteDrawingFromServer(drawingName);
+                })
+                .catch(error => {
+                    console.error('Error creating backup before deletion:', error);
+                    alert(`Failed to create backup before deletion: ${error.message}`);
+                });
 /**            
             // Show a success message with button to complete deletion
             const confirmDeleteBtn = document.createElement('button');
@@ -677,7 +698,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (viewDrawingBtn) viewDrawingBtn.disabled = false;
                 if (editDrawingBtn) editDrawingBtn.disabled = false;
                 if (copyDrawingBtn) copyDrawingBtn.disabled = false;
-                if (saveDrawingBtn) saveDrawingBtn.disabled = false;
+   //             if (saveDrawingBtn) saveDrawingBtn.disabled = false;
                 if (arduinoExportBtn) arduinoExportBtn.disabled = false;
                 if (deleteDrawingBtn) deleteDrawingBtn.disabled = false;
                 
@@ -685,7 +706,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (viewDrawingBtn) viewDrawingBtn.dataset.drawing = currentSelection;
                 if (editDrawingBtn) editDrawingBtn.dataset.drawing = currentSelection;
                 if (copyDrawingBtn) copyDrawingBtn.dataset.drawing = currentSelection;
-                if (saveDrawingBtn) saveDrawingBtn.dataset.drawing = currentSelection;
+    //            if (saveDrawingBtn) saveDrawingBtn.dataset.drawing = currentSelection;
                 if (arduinoExportBtn) arduinoExportBtn.dataset.drawing = currentSelection;
                 if (deleteDrawingBtn) deleteDrawingBtn.dataset.drawing = currentSelection;
             }
@@ -789,8 +810,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     // Set the drawing name from the filename
                     drawingData.name = drawingName;
                     
-                    if (!drawingData.x || !drawingData.y || !drawingData.color) {
-                        alert('Invalid JSON file: Missing required properties');
+                    if (drawingData.x === undefined || drawingData.y === undefined || drawingData.color === undefined) {
+                        const missing = [];
+                        if (drawingData.x === undefined) missing.push('x (width)');
+                        if (drawingData.y === undefined) missing.push('y (height)');
+                        if (drawingData.color === undefined) missing.push('color (background)');
+                        alert(`Invalid JSON file: Missing required properties: ${missing.join(', ')}`);
                         return;
                     }
                     
@@ -958,7 +983,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (viewDrawingBtn) viewDrawingBtn.disabled = true;
         if (editDrawingBtn) editDrawingBtn.disabled = true;
         if (copyDrawingBtn) copyDrawingBtn.disabled = true;
-        if (saveDrawingBtn) saveDrawingBtn.disabled = true;
+  //      if (saveDrawingBtn) saveDrawingBtn.disabled = true;
         if (deleteDrawingBtn) deleteDrawingBtn.disabled = true;
         
         fetch('/api/drawings', {
@@ -1009,7 +1034,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (viewDrawingBtn) viewDrawingBtn.disabled = false;
                         if (editDrawingBtn) editDrawingBtn.disabled = false;
                         if (copyDrawingBtn) copyDrawingBtn.disabled = false;
-                        if (saveDrawingBtn) saveDrawingBtn.disabled = false;
+   //                     if (saveDrawingBtn) saveDrawingBtn.disabled = false;
                         if (arduinoExportBtn) arduinoExportBtn.disabled = false;
                         if (deleteDrawingBtn) deleteDrawingBtn.disabled = false;
                         
@@ -1017,7 +1042,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (viewDrawingBtn) viewDrawingBtn.dataset.drawing = drawing.name;
                         if (editDrawingBtn) editDrawingBtn.dataset.drawing = drawing.name;
                         if (copyDrawingBtn) copyDrawingBtn.dataset.drawing = drawing.name;
-                        if (saveDrawingBtn) saveDrawingBtn.dataset.drawing = drawing.name;
+  //                      if (saveDrawingBtn) saveDrawingBtn.dataset.drawing = drawing.name;
                         if (deleteDrawingBtn) deleteDrawingBtn.dataset.drawing = drawing.name;
                     }
                     
@@ -1039,7 +1064,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         viewDrawingBtn.disabled = false;
                         editDrawingBtn.disabled = false;
                         copyDrawingBtn.disabled = false;
-                        saveDrawingBtn.disabled = false;
+   //                     saveDrawingBtn.disabled = false;
                         if (arduinoExportBtn) arduinoExportBtn.disabled = false;
                         deleteDrawingBtn.disabled = false;
                         
@@ -1047,7 +1072,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         viewDrawingBtn.dataset.drawing = drawing.name;
                         editDrawingBtn.dataset.drawing = drawing.name;
                         copyDrawingBtn.dataset.drawing = drawing.name;
-                        saveDrawingBtn.dataset.drawing = drawing.name;
+   //                     saveDrawingBtn.dataset.drawing = drawing.name;
                         deleteDrawingBtn.dataset.drawing = drawing.name;
                     });
                     
@@ -1168,6 +1193,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     // Fetch the updated drawings list - selection will be restored in fetchDrawings
                     fetchDrawings();
+                    
+                    // Automatically save the newly created drawing
+                    console.log(`Automatically saving newly created drawing "${drawingToSelect}"`);
+                    saveDrawingAsJson(drawingToSelect);
                 } else {
                     alert(`Error: ${result.error || 'Unknown error'}`);
                 }

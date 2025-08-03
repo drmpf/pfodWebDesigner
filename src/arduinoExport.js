@@ -265,8 +265,8 @@ void Dwg_${dwgName}::sendIndexedItems() {
         // Process each item
         if (Array.isArray(drawingData.items)) {
             drawingData.items.forEach(item => {
-                if (!item || !item.type || !(item.indexed === 'true' || item.indexed === true)) {
-                  return;
+                if (!item || !item.type || (!(item.indexed === 'true' || item.indexed === true)) || item.type === 'index' ) {
+                  return; // skip index here as was sent in sendFullDrawing
                 }                
                 const arduinoLine = convertItemToArduino(item);
                 if (arduinoLine) {
@@ -284,22 +284,25 @@ void Dwg_${dwgName}::sendFullDrawing() {
     // Start the drawing
     dwgsPtr->start(${drawingData.x || 50}, ${drawingData.y || 50}, ${bgColor});
     parserPtr->sendRefreshAndVersion(dwgRefresh); // sets version and refresh time for dwg pfodWeb processes this
-    sendIndexedItems(); // send indexed items first so they are available for touchZone accesses        
 `;
 
 // ======= processing Code block =======================
         // Process each item
         if (Array.isArray(drawingData.items)) {
             drawingData.items.forEach(item => {
-                if (!item || !item.type || (item.indexed === 'true') || (item.indexed === true) ) return; // skip indexed items                
-                const arduinoLine = convertItemToArduino(item);
-                if (arduinoLine) {
+                if ((item.indexed === 'true') || (item.indexed === true) ) {
+                   arduinoCode += `    dwgsPtr->index().idx(${item.idxName}).send(); // place holder for indexed item\n`;
+                } else {
+                  const arduinoLine = convertItemToArduino(item);
+                  if (arduinoLine) {
                     arduinoCode += `    ${arduinoLine}\n`;
+                  }
                 }
             });
         }
         
         // End the drawing
+        arduinoCode += `    sendIndexedItems(); // update indexed items with their real values\n`;        
         arduinoCode += `    dwgsPtr->end();\n`;
         arduinoCode += '}\n';
 // ======= End processing Code block =======================
@@ -309,7 +312,7 @@ arduinoCode += `
 // all the indexed items are included here, edit as needed
 void Dwg_${dwgName}::sendUpdate() {
     dwgsPtr->startUpdate();
-    sendIndexedItems(); // send indexed items first so they are available for touchZone accesses        
+    sendIndexedItems(); // send updated indexed items        
 `;
 
 arduinoCode += `    dwgsPtr->end();
@@ -345,7 +348,7 @@ arduinoCode += `    dwgsPtr->end();
         switch (type) {
             case 'line':
                 let lineCode = addIdx('dwgsPtr->line()', item.idxName);
-                lineCode += `.color(${color}).size(${item.xSize || 1},${item.ySize || 1}).offset(${xOffset},${yOffset}).send();`;
+                lineCode += `.color(${color}).size(${item.xSize || 0},${item.ySize || 0}).offset(${xOffset},${yOffset}).send();`;
                 return lineCode;
             
             case 'rectangle':
@@ -354,20 +357,20 @@ arduinoCode += `    dwgsPtr->end();
                 if (item.centered === 'true' || item.centered === true) rectCode += '.centered()';
                 if (item.rounded === 'true' || item.rounded === true) rectCode += '.rounded()';
                 rectCode = addIdx(rectCode, item.idxName);
-                rectCode += `.color(${color}).size(${item.xSize || 1},${item.ySize || 1}).offset(${xOffset},${yOffset}).send();`;
+                rectCode += `.color(${color}).size(${item.xSize},${item.ySize}).offset(${xOffset},${yOffset}).send();`;
                 return rectCode;
             
             case 'circle':
                 let circleCode = `dwgsPtr->circle()`;
                 if (item.filled === 'true' || item.filled === true) circleCode += '.filled()';
                 circleCode = addIdx(circleCode, item.idxName);
-                circleCode += `.color(${color}).radius(${item.radius || 1}).offset(${xOffset},${yOffset}).send();`;
+                circleCode += `.color(${color}).radius(${item.radius}).offset(${xOffset},${yOffset}).send();`;
                 return circleCode;
             
             case 'arc':
                 let arcCode = addIdx('dwgsPtr->arc()', item.idxName);
                 if (item.filled === 'true' || item.filled === true) arcCode += '.filled()';
-                arcCode += `.color(${color}).radius(${item.radius || 1}).start(${item.start || 0}).angle(${item.angle || 90}).offset(${xOffset},${yOffset}).send();`;
+                arcCode += `.color(${color}).radius(${item.radius}).start(${item.start}).angle(${item.angle}).offset(${xOffset},${yOffset}).send();`;
                 return arcCode;
             
             case 'label':
@@ -407,11 +410,14 @@ arduinoCode += `    dwgsPtr->end();
                 else valueCode += '.center()';
                 
                 if (item.intValue !== undefined) {
-                    valueCode += `.intValue(${item.intValue})`;
+                    const intValue = convertOffset(item.intValue);
+                    valueCode += `.intValue(${intValue})`;
+                    if (item.units) valueCode += `.units("${item.units}")`;
                     if (item.max !== undefined) valueCode += `.maxValue(${item.max})`;
                     if (item.min !== undefined) valueCode += `.minValue(${item.min})`;
                     if (item.displayMax !== undefined) valueCode += `.displayMax(${item.displayMax})`;
                     if (item.displayMin !== undefined) valueCode += `.displayMin(${item.displayMin})`;
+                    if (item.decimals !== undefined) valueCode += `.decimals(${item.decimals})`;
                 } else {
                     // Floating point value
                     if (item.decimals !== undefined) valueCode += `.decimals(${item.decimals})`;
@@ -440,9 +446,10 @@ arduinoCode += `    dwgsPtr->end();
                 
                 // Handle filter
                 if (item.filter) {
-                    const filters = parseFilter(item.filter);
-                    if (filters.length > 0) {
-                        touchCode += `.filter(${filters.join(' | ')})`;
+                    const filterNames = window.TouchZoneFilters.decode(item.filter);
+                    if (filterNames.length > 0) {
+                        const arduinoFilters = filterNames.map(name => `dwgsPtr->${name}`);
+                        touchCode += `.filter(${arduinoFilters.join(' | ')})`;
                     }
                 }
                 
@@ -503,6 +510,9 @@ arduinoCode += `    dwgsPtr->end();
     
     // Function to convert color from integer to Arduino format
     function convertColor(colorInt) {
+        if (typeof colorInt === 'number' && colorInt === -1) {
+            return 'dwgsPtr->BLACK_WHITE';
+        }
         // Handle non-numeric input - default to BLACK
         if (typeof colorInt !== 'number' || colorInt < 0 || colorInt > 255) {
             return 'dwgsPtr->BLACK';
@@ -538,34 +548,6 @@ arduinoCode += `    dwgsPtr->end();
         return colorInt.toString();
     }
     
-    // Function to parse filter string into Arduino constants
-    function parseFilter(filterString) {
-        if (!filterString) return ['dwgsPtr->TOUCH'];
-        
-        const filterMap = {
-            'TOUCH': 'dwgsPtr->TOUCH',
-            'DOWN': 'dwgsPtr->DOWN',
-            'DRAG': 'dwgsPtr->DRAG',
-            'UP': 'dwgsPtr->UP',
-            'CLICK': 'dwgsPtr->CLICK',
-            'PRESS': 'dwgsPtr->PRESS',
-            'ENTRY': 'dwgsPtr->ENTRY',
-            'EXIT': 'dwgsPtr->EXIT',
-            'DOWN_UP': 'dwgsPtr->DOWN_UP',
-            'TOUCH_DISABLED': 'dwgsPtr->TOUCH_DISABLED'
-        };
-        
-        const filters = [];
-        const filterStr = filterString.toString().toUpperCase();
-        
-        for (const [key, value] of Object.entries(filterMap)) {
-            if (filterStr.includes(key)) {
-                filters.push(value);
-            }
-        }
-        
-        return filters.length > 0 ? filters : ['dwgsPtr->TOUCH'];
-    }
     
 function createAndDownloadZip(files, zipFilename = 'archive.zip') {
     // Helper function to convert string to Uint8Array

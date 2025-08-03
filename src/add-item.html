@@ -569,10 +569,8 @@
                         <option value="4">UP (4)</option>
                         <option value="8">CLICK (8)</option>
                         <option value="16">PRESS (16) - Long Press</option>
+                        <option value="256">DOWN_DRAG_UP (256) - only UP msg sent on UP</option>
                         <option value="512">TOUCH_DISABLED (512)</option>
-                        <option value="3">DOWN + DRAG (1+2)</option>
-                        <option value="7">DOWN + DRAG + UP (1+2+4)</option>
-                        <option value="24">CLICK + PRESS (8+16)</option>
                     </select>
                 </div>
                 <div class="checkbox-group">
@@ -592,7 +590,10 @@
                 <div style="flex: 1; margin-right: 20px;">
                     <label for="item-color">Color:</label>
                     <input type="hidden" id="item-color" value="0">
-                    <div id="item-color-picker"></div>
+                    <button id="black-white-btn" type="button" style="background-color: #007bff; margin-right: 5px;">BLACK_WHITE</button>
+                    <span style="margin: 0 5px;">OR</span>
+                    <button id="choose-color-btn" type="button" style="background-color: #6c757d; margin-right: 5px;">Color</button>
+                    <div id="item-color-picker" style="display: none; margin-top: 10px"></div>
                 </div>
                 <div style="flex: 0 0 auto;">
                     <div class="checkbox-group">

@@ -98,14 +98,56 @@ document.addEventListener('DOMContentLoaded', () => {
     const itemColor = document.getElementById('item-color');
     const itemIdx = document.getElementById('item-idx');
     
+    // Color mode handling - Black/White vs Choose Color
+    let isBlackWhiteMode = true; // Default to Black/White mode for new items
+    const blackWhiteBtn = document.getElementById('black-white-btn');
+    const chooseColorBtn = document.getElementById('choose-color-btn');
+    const colorPicker = document.getElementById('item-color-picker');
+    
     // Initialize color picker for item color
     if (typeof createColorPicker !== 'undefined') {
-        createColorPicker('item-color-picker', 'item-color', 0);
+        createColorPicker('item-color-picker', 'item-color', 15); // Temporary default, will be updated after drawingData loads
+    }
+    
+    // Function to set Black/White mode
+    function setBlackWhiteMode(enabled) {
+        isBlackWhiteMode = enabled;
+        if (enabled) {
+            blackWhiteBtn.style.backgroundColor = '#007bff';
+            chooseColorBtn.style.backgroundColor = '#6c757d';
+            colorPicker.style.display = 'none';
+            if (drawingData && itemColor) {
+                itemColor.value = -1;
+            }
+        } else {
+            chooseColorBtn.style.backgroundColor = '#007bff';
+            blackWhiteBtn.style.backgroundColor = '#6c757d';
+            colorPicker.style.display = 'block';
+            // Update color value to currently displayed color when switching to COLOR mode
+            if (drawingData && itemColor) {
+                const currentDisplayedColor = getBlackWhite(drawingData.color);
+                itemColor.value = currentDisplayedColor;
+                updateColorPickerDisplay('item-color', currentDisplayedColor);
+            }
+        }
     }
     
     // Edit mode variables (moved up to avoid initialization errors)
     let isEditMode = editIndex !== null && editIndex !== undefined && editIndex !== '';
     let editingItem = null;
+    
+    // Set initial Black/White mode for new items (moved to after fetchDrawingInfo completes)
+    
+    // Button click handlers
+    blackWhiteBtn.addEventListener('click', function() {
+        setBlackWhiteMode(true);
+        updatePreview();
+    });
+    
+    chooseColorBtn.addEventListener('click', function() {
+        setBlackWhiteMode(false);
+        updatePreview();
+    });
     
     // Index selection mode variables (for new two-step flow)
     let hasSelectedIndex = selectedIdx !== null && selectedIdx !== undefined && selectedIdx !== '';
@@ -224,6 +266,11 @@ document.addEventListener('DOMContentLoaded', () => {
         loadEditingItem();
     }
     
+    // If in replacement mode (not edit mode), load the existing indexed item to copy its type and values
+    if (hasSelectedIndex && selectionMode === 'replace' && !isEditMode) {
+        loadIndexedItemForReplacement();
+    }
+    
     // Set up event listeners
     itemTypeDropdown.addEventListener('change', handleItemTypeChange);
     addItemBtn.addEventListener('click', addItem);
@@ -290,7 +337,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add event listeners for offset type dropdowns to update preview when COL/ROW is selected
     ['line-xoffset-type', 'line-yoffset-type', 'rect-xoffset-type', 'rect-yoffset-type',
      'circle-xoffset-type', 'circle-yoffset-type', 'arc-xoffset-type', 'arc-yoffset-type',
-     'label-xoffset-type', 'label-yoffset-type', 'value-xoffset-type', 'value-yoffset-type']
+     'label-xoffset-type', 'label-yoffset-type', 'value-xoffset-type', 'value-yoffset-type',
+     'value-intvalue-type']
     .forEach(selectId => {
         const select = document.getElementById(selectId);
         if (select) {
@@ -303,6 +351,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function handleItemTypeChange() {
         const itemType = itemTypeDropdown.value;
         console.log(`Item type changed to: ${itemType}`);
+        
+        // Preserve current xOffset and yOffset values when changing item type
+        const currentXOffset = getCurrentXOffsetValue();
+        const currentYOffset = getCurrentYOffsetValue();
         
         
         // Hide all property sections first
@@ -327,15 +379,30 @@ document.addEventListener('DOMContentLoaded', () => {
             lineProperties.style.display = 'block';
             // Configure offset dropdowns based on mode
             configureOffsetDropdowns();
-            // Set default values for lines
-            if (canvasWidth && canvasHeight) {
+            // Set default values for lines or carry forward from existing item
+            if (editingItem) {
+                lineX.value = (editingItem.xSize !== undefined ? editingItem.xSize : (editingItem.x !== undefined ? editingItem.x : 1));
+                lineY.value = (editingItem.ySize !== undefined ? editingItem.ySize : (editingItem.y !== undefined ? editingItem.y : 1));
+                setOffsetValue('line-xoffset', editingItem.xOffset !== undefined ? editingItem.xOffset : 0);//Math.floor(canvasWidth / 2));
+                setOffsetValue('line-yoffset', editingItem.yOffset !== undefined ? editingItem.yOffset : 0);//Math.floor(canvasHeight / 2));
+            } else if (canvasWidth && canvasHeight) {
                 lineX.value = 1;
                 lineY.value = 1;
-                lineXOffset.value = Math.floor(canvasWidth / 2);
-                lineYOffset.value = Math.floor(canvasHeight / 2);
+                // Use preserved offset values when changing item types, or defaults for initial load
+                if (currentXOffset && currentXOffset.type !== 'number' || currentXOffset.value !== 0) {
+                    setOffsetValue('line-xoffset', currentXOffset.value);
+                } else {
+                    setOffsetValue('line-xoffset', 0);//Math.floor(canvasWidth / 2));
+                }
+                if (currentYOffset && currentYOffset.type !== 'number' || currentYOffset.value !== 0) {
+                    setOffsetValue('line-yoffset', currentYOffset.value);
+                } else {
+                    setOffsetValue('line-yoffset', 0);//Math.floor(canvasHeight / 2));
+                }
             }
             // Show color picker for lines
             itemColor.parentElement.style.display = 'block';
+            // Color is handled by populateFormFieldsForItem
             // Show idx input for lines
             itemIdx.parentElement.style.display = 'block';
             // Always lock index in touchAction mode
@@ -344,10 +411,27 @@ document.addEventListener('DOMContentLoaded', () => {
             rectangleProperties.style.display = 'block';
             // Configure offset dropdowns based on mode
             configureOffsetDropdowns();
-            // Set default values for rectangles
-            if (canvasWidth && canvasHeight) {
-                rectXOffset.value = Math.floor(canvasWidth / 2);
-                rectYOffset.value = Math.floor(canvasHeight / 2);
+            // Set default values for rectangles or carry forward from existing item
+            if (editingItem) {
+                setOffsetValue('rect-xoffset', editingItem.xOffset !== undefined ? editingItem.xOffset : 0);//Math.floor(canvasWidth / 2));
+                setOffsetValue('rect-yoffset', editingItem.yOffset !== undefined ? editingItem.yOffset : 0);//Math.floor(canvasHeight / 2));
+                rectWidth.value = (editingItem.xSize !== undefined ? editingItem.xSize : 1);
+                rectHeight.value = (editingItem.ySize !== undefined ? editingItem.ySize : 1);
+                rectStyle.checked = (editingItem.filled !== undefined ? editingItem.filled === 'true' : true);
+                rectCentered.checked = (editingItem.centered !== undefined ? editingItem.centered === 'true' : false);
+                rectCorners.checked = (editingItem.rounded !== undefined ? editingItem.rounded === 'true' : false);
+            } else if (canvasWidth && canvasHeight) {
+                // Use preserved offset values when changing item types, or defaults for initial load
+                if (currentXOffset && (currentXOffset.type !== 'number' || currentXOffset.value !== 0)) {
+                    setOffsetValue('rect-xoffset', currentXOffset.value);
+                } else {
+                    setOffsetValue('rect-xoffset', 0);//Math.floor(canvasWidth / 2));
+                }
+                if (currentYOffset && (currentYOffset.type !== 'number' || currentYOffset.value !== 0)) {
+                    setOffsetValue('rect-yoffset', currentYOffset.value);
+                } else {
+                    setOffsetValue('rect-yoffset', 0);//Math.floor(canvasHeight / 2));
+                }
                 rectWidth.value = 1;
                 rectHeight.value = 1;
                 rectStyle.checked = true; // filled
@@ -356,6 +440,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             // Show color picker for rectangles
             itemColor.parentElement.style.display = 'block';
+            // Color is handled by populateFormFieldsForItem
             // Show idx input for rectangles
             itemIdx.parentElement.style.display = 'block';
             // Always lock index in touchAction mode
@@ -364,10 +449,31 @@ document.addEventListener('DOMContentLoaded', () => {
             labelProperties.style.display = 'block';
             // Configure offset dropdowns based on mode
             configureOffsetDropdowns();
-            // Set default values for labels
-            if (canvasWidth && canvasHeight) {
-                labelXOffset.value = Math.floor(canvasWidth / 4);
-                labelYOffset.value = Math.floor(canvasHeight / 4);
+            // Set default values for labels or carry forward from existing item
+            if (editingItem) {
+                setOffsetValue('label-xoffset', editingItem.xOffset !== undefined ? editingItem.xOffset : 0);//Math.floor(canvasWidth / 4));
+                setOffsetValue('label-yoffset', editingItem.yOffset !== undefined ? editingItem.yOffset : 0);//Math.floor(canvasHeight / 4));
+                labelText.value = (editingItem.text !== undefined ? editingItem.text : 'Label Text');
+                labelFontSize.value = (editingItem.fontSize !== undefined ? editingItem.fontSize : 0);
+                labelAlign.value = (editingItem.align !== undefined ? editingItem.align : 'left');
+                labelBold.checked = (editingItem.bold !== undefined ? editingItem.bold === 'true' : false);
+                labelItalic.checked = (editingItem.italic !== undefined ? editingItem.italic === 'true' : false);
+                labelUnderline.checked = (editingItem.underline !== undefined ? editingItem.underline === 'true' : false);
+                labelValue.value = (editingItem.value !== undefined ? editingItem.value : '');
+                labelDecimals.value = (editingItem.decimals !== undefined ? editingItem.decimals : 2);
+                labelUnits.value = (editingItem.units !== undefined ? editingItem.units : '');
+            } else if (canvasWidth && canvasHeight) {
+                // Use preserved offset values when changing item types, or defaults for initial load
+                if (currentXOffset && (currentXOffset.type !== 'number' || currentXOffset.value !== 0)) {
+                    setOffsetValue('label-xoffset', currentXOffset.value);
+                } else {
+                    setOffsetValue('label-xoffset', 0);//Math.floor(canvasWidth / 4));
+                }
+                if (currentYOffset && (currentYOffset.type !== 'number' || currentYOffset.value !== 0)) {
+                    setOffsetValue('label-yoffset', currentYOffset.value);
+                } else {
+                    setOffsetValue('label-yoffset', 0);//Math.floor(canvasHeight / 4));
+                }
                 labelText.value = 'Label Text';
                 labelFontSize.value = 12;
                 labelAlign.value = 'left';
@@ -377,6 +483,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             // Show color picker for labels
             itemColor.parentElement.style.display = 'block';
+            // Color is handled by populateFormFieldsForItem
             // Show idx input for labels
             itemIdx.parentElement.style.display = 'block';
             // Always lock index in touchAction mode
@@ -385,10 +492,35 @@ document.addEventListener('DOMContentLoaded', () => {
             valueProperties.style.display = 'block';
             // Configure offset dropdowns based on mode
             configureOffsetDropdowns();
-            // Set default values for values
-            if (canvasWidth && canvasHeight) {
-                valueXOffset.value = Math.floor(canvasWidth / 4);
-                valueYOffset.value = Math.floor(canvasHeight / 4);
+            // Set default values for values or carry forward from existing item
+            if (editingItem) {
+                setOffsetValue('value-xoffset', editingItem.xOffset !== undefined ? editingItem.xOffset : 0);//Math.floor(canvasWidth / 4));
+                setOffsetValue('value-yoffset', editingItem.yOffset !== undefined ? editingItem.yOffset : 0);//Math.floor(canvasHeight / 4));
+                valueText.value = (editingItem.text !== undefined ? editingItem.text : 'Value: ');
+                valueFontSize.value = (editingItem.fontSize !== undefined ? editingItem.fontSize : 0);
+                valueAlign.value = (editingItem.align !== undefined ? editingItem.align : 'left');
+                valueBold.checked = (editingItem.bold !== undefined ? editingItem.bold === 'true' : false);
+                valueItalic.checked = (editingItem.italic !== undefined ? editingItem.italic === 'true' : false);
+                valueUnderline.checked = (editingItem.underline !== undefined ? editingItem.underline === 'true' : false);
+                setIntValue(editingItem.intValue !== undefined ? editingItem.intValue : 50);
+                valueMin.value = (editingItem.min !== undefined ? editingItem.min : 0);
+                valueMax.value = (editingItem.max !== undefined ? editingItem.max : 100);
+                valueDisplayMin.value = (editingItem.displayMin !== undefined ? editingItem.displayMin : 0.0);
+                valueDisplayMax.value = (editingItem.displayMax !== undefined ? editingItem.displayMax : 1.0);
+                valueDecimals.value = (editingItem.decimals !== undefined ? editingItem.decimals : 2);
+                valueUnits.value = (editingItem.units !== undefined ? editingItem.units : '');
+            } else if (canvasWidth && canvasHeight) {
+                // Use preserved offset values when changing item types, or defaults for initial load
+                if (currentXOffset && (currentXOffset.type !== 'number' || currentXOffset.value !== 0)) {
+                    setOffsetValue('value-xoffset', currentXOffset.value);
+                } else {
+                    setOffsetValue('value-xoffset', 0);//Math.floor(canvasWidth / 4));
+                }
+                if (currentYOffset && (currentYOffset.type !== 'number' || currentYOffset.value !== 0)) {
+                    setOffsetValue('value-yoffset', currentYOffset.value);
+                } else {
+                    setOffsetValue('value-yoffset', 0);//Math.floor(canvasHeight / 4));
+                }
                 valueText.value = 'Value: ';
                 valueFontSize.value = 12;
                 valueAlign.value = 'left';
@@ -405,6 +537,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             // Show color picker for values
             itemColor.parentElement.style.display = 'block';
+            // Color is handled by populateFormFieldsForItem
             // Show idx input for values
             itemIdx.parentElement.style.display = 'block';
             // Always lock index in touchAction mode
@@ -413,15 +546,30 @@ document.addEventListener('DOMContentLoaded', () => {
             circleProperties.style.display = 'block';
             // Configure offset dropdowns based on mode
             configureOffsetDropdowns();
-            // Set default values for circles
-            if (canvasWidth && canvasHeight) {
-                circleXOffset.value = Math.floor(canvasWidth / 2);
-                circleYOffset.value = Math.floor(canvasHeight / 2);
+            // Set default values for circles or carry forward from existing item
+            if (editingItem) {
+                setOffsetValue('circle-xoffset', editingItem.xOffset !== undefined ? editingItem.xOffset : 0);//Math.floor(canvasWidth / 2));
+                setOffsetValue('circle-yoffset', editingItem.yOffset !== undefined ? editingItem.yOffset : 0);//Math.floor(canvasHeight / 2));
+                circleRadius.value = (editingItem.radius !== undefined ? editingItem.radius : 5);
+                circleFilled.checked = (editingItem.filled !== undefined ? editingItem.filled === 'true' : false);
+            } else if (canvasWidth && canvasHeight) {
+                // Use preserved offset values when changing item types, or defaults for initial load
+                if (currentXOffset && (currentXOffset.type !== 'number' || currentXOffset.value !== 0)) {
+                    setOffsetValue('circle-xoffset', currentXOffset.value);
+                } else {
+                    setOffsetValue('circle-xoffset', 0);//Math.floor(canvasWidth / 2));
+                }
+                if (currentYOffset && (currentYOffset.type !== 'number' || currentYOffset.value !== 0)) {
+                    setOffsetValue('circle-yoffset', currentYOffset.value);
+                } else {
+                    setOffsetValue('circle-yoffset', 0);//Math.floor(canvasHeight / 2));
+                }
                 circleRadius.value = 5;
                 circleFilled.checked = false;
             }
             // Show color picker for circles
             itemColor.parentElement.style.display = 'block';
+            // Color is handled by populateFormFieldsForItem
             // Show idx input for circles
             itemIdx.parentElement.style.display = 'block';
             // Always lock index in touchAction mode
@@ -430,10 +578,26 @@ document.addEventListener('DOMContentLoaded', () => {
             arcProperties.style.display = 'block';
             // Configure offset dropdowns based on mode
             configureOffsetDropdowns();
-            // Set default values for arcs
-            if (canvasWidth && canvasHeight) {
-                arcXOffset.value = Math.floor(canvasWidth / 2);
-                arcYOffset.value = Math.floor(canvasHeight / 2);
+            // Set default values for arcs or carry forward from existing item
+            if (editingItem) {
+                setOffsetValue('arc-xoffset', editingItem.xOffset !== undefined ? editingItem.xOffset : 0);//Math.floor(canvasWidth / 2));
+                setOffsetValue('arc-yoffset', editingItem.yOffset !== undefined ? editingItem.yOffset : 0);//Math.floor(canvasHeight / 2));
+                arcRadius.value = (editingItem.radius !== undefined ? editingItem.radius : 5);
+                arcStart.value = (editingItem.start !== undefined ? editingItem.start : 0);
+                arcAngle.value = (editingItem.angle !== undefined ? editingItem.angle : 90);
+                arcFilled.checked = (editingItem.filled !== undefined ? editingItem.filled === 'true' : false);
+            } else if (canvasWidth && canvasHeight) {
+                // Use preserved offset values when changing item types, or defaults for initial load
+                if (currentXOffset && (currentXOffset.type !== 'number' || currentXOffset.value !== 0)) {
+                    setOffsetValue('arc-xoffset', currentXOffset.value);
+                } else {
+                    setOffsetValue('arc-xoffset', 0);//Math.floor(canvasWidth / 2));
+                }
+                if (currentYOffset && (currentYOffset.type !== 'number' || currentYOffset.value !== 0)) {
+                    setOffsetValue('arc-yoffset', currentYOffset.value);
+                } else {
+                    setOffsetValue('arc-yoffset', 0);//Math.floor(canvasHeight / 2));
+                }
                 arcRadius.value = 5;
                 arcStart.value = 0;
                 arcAngle.value = 90;
@@ -441,6 +605,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             // Show color picker for arcs
             itemColor.parentElement.style.display = 'block';
+            // Color is handled by populateFormFieldsForItem
             // Show idx input for arcs
             itemIdx.parentElement.style.display = 'block';
             // Always lock index in touchAction mode
@@ -482,6 +647,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 drawingData = data;
                 canvasWidth = data.canvasWidth || data.x || 50;
                 canvasHeight = data.canvasHeight || data.y || 50;
+                
+                // Update color picker with proper default based on background color
+                if (!isEditMode) {
+                    // Set initial Black/White mode for new items now that drawingData is available
+                    setBlackWhiteMode(true);
+                    const defaultColor = getBlackWhite(drawingData.color);
+                    updateColorPickerDisplay('item-color', defaultColor);
+                    itemColor.value = isBlackWhiteMode ? -1 : defaultColor;
+                }
                 
                 console.log(`Loaded drawing info: ${canvasWidth}x${canvasHeight}`);
                 
@@ -575,6 +749,64 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
+    // Load existing indexed item for replacement mode
+    function loadIndexedItemForReplacement() {
+        if (!hasSelectedIndex || !lockedIndex || !lockedIndexName) return;
+        
+        console.log(`Loading indexed item for replacement: idx=${lockedIndex}, idxName="${lockedIndexName}"`);
+        
+        // Get the original drawing name (before _touchAction_edit)
+        const originalDrawingName = drawingName.replace('_touchAction_edit', '');
+        
+        // Fetch the original drawing data to find the indexed item
+        fetch(`/api/drawings/${originalDrawingName}/data`)
+            .then(response => response.json())
+            .then(data => {
+                if (!data.items) {
+                    console.warn('No items found in original drawing');
+                    return;
+                }
+                
+                // Find the indexed item with matching idx
+                const indexedItem = data.items.find(item => item.idx === lockedIndex);
+                if (!indexedItem) {
+                    console.warn(`No indexed item found with idx=${lockedIndex}`);
+                    return;
+                }
+                
+                console.log('Found indexed item for replacement:', indexedItem);
+                
+                // Determine the replacement item type and values
+                let replacementItem;
+                if (indexedItem.type === 'index') {
+                    // Special case: replace index items with line at position 1,2 size canvasWidth/2, canvasHeight/2
+                    replacementItem = {
+                        type: 'line',
+                        xSize: Math.floor(canvasWidth / 2) || 1,
+                        ySize: Math.floor(canvasHeight / 2) || 1,
+                        xOffset: 1,
+                        yOffset: 2,
+                        color: indexedItem.color || 0
+                    };
+                } else {
+                    // For other types, copy all properties from the indexed item
+                    replacementItem = { ...indexedItem };
+                }
+                
+                // Set the replacement item as editingItem to populate the form
+                editingItem = replacementItem;
+                
+                // Populate the form with the replacement item's values
+                populateFormWithItem(replacementItem);
+                
+                console.log('Initialized form with replacement item:', replacementItem);
+            })
+            .catch(error => {
+                console.error('Error loading indexed item for replacement:', error);
+                console.warn('Failed to load indexed item - using defaults');
+            });
+    }
+    
     // Populate form fields with item values
     function populateFormWithItem(item) {
         console.log('Populating form with item:', item);
@@ -596,8 +828,20 @@ document.addEventListener('DOMContentLoaded', () => {
         // Populate common fields
         if (itemColor && item.color !== undefined) {
             itemColor.value = item.color;
-            // Update color picker display
-            updateColorPickerDisplay('item-color', item.color);
+            
+            // Handle color mode based on item color
+            if (item.color === -1) {
+                // Color -1 means Black/White mode
+                setBlackWhiteMode(true);
+            } else {
+                // Regular color numbers (0-255) mean Choose Color mode
+                setBlackWhiteMode(false);
+                // Update color picker display
+                updateColorPickerDisplay('item-color', item.color);
+            }
+        } else {
+            // Default color for new items
+            itemColor.value = isBlackWhiteMode ? -1 : getBlackWhite(drawingData.color);
         }
         if (itemIdx && item.idxName) {
             // Show idxName and always lock the field in touchAction mode
@@ -732,6 +976,54 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
+
+    // Helper function to get current offset type and value from form
+    function getCurrentOffsetSetting(inputId) {
+        const typeSelect = document.getElementById(inputId + '-type');
+        const input = document.getElementById(inputId);
+        
+        if (typeSelect && input) {
+            if (typeSelect.value === 'COL' || typeSelect.value === 'ROW') {
+                return { type: typeSelect.value, value: typeSelect.value };
+            } else {
+                return { type: 'number', value: parseFloat(input.value || 0) };
+            }
+        }
+        return { type: 'number', value: 0 };
+    }
+    
+    // Helper function to get current xOffset value from any visible item type
+    function getCurrentXOffsetValue() {
+        // Check all possible xOffset inputs to find the currently visible one
+        const xOffsetInputs = ['line-xoffset', 'rect-xoffset', 'circle-xoffset', 'arc-xoffset', 'label-xoffset', 'value-xoffset'];
+        
+        for (const inputId of xOffsetInputs) {
+            const element = document.getElementById(inputId);
+            const typeSelect = document.getElementById(inputId + '-type');
+            
+            if (element && typeSelect && element.offsetParent !== null) { // offsetParent is null when element is hidden
+                return getCurrentOffsetSetting(inputId);
+            }
+        }
+        return { type: 'number', value: 0 };
+    }
+    
+    // Helper function to get current yOffset value from any visible item type
+    function getCurrentYOffsetValue() {
+        // Check all possible yOffset inputs to find the currently visible one
+        const yOffsetInputs = ['line-yoffset', 'rect-yoffset', 'circle-yoffset', 'arc-yoffset', 'label-yoffset', 'value-yoffset'];
+        
+        for (const inputId of yOffsetInputs) {
+            const element = document.getElementById(inputId);
+            const typeSelect = document.getElementById(inputId + '-type');
+            
+            if (element && typeSelect && element.offsetParent !== null) { // offsetParent is null when element is hidden
+                return getCurrentOffsetSetting(inputId);
+            }
+        }
+        return { type: 'number', value: 0 };
+    }
+
     
     
     
@@ -761,15 +1053,15 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Add color for line, rectangle, label, value, circle, and arc only 
         if (itemType === 'line' || itemType === 'rectangle' || itemType === 'label' || itemType === 'value' || itemType === 'circle' || itemType === 'arc') {
-            tempItem.color = isNaN(parseInt(itemColor.value))? 15 : parseInt(itemColor.value);
+            tempItem.color = isBlackWhiteMode ? -1 : (isNaN(parseInt(itemColor.value)) ? getBlackWhite(drawingData.color) : parseInt(itemColor.value));
         }
         // Note: push, pop, insertDwg, and index items are not available in touchAction mode
         
         if (itemType === 'line') {
             tempItem = {
                 ...tempItem,
-                x: parseFloat(lineX.value || 1),
-                y: parseFloat(lineY.value || 1),
+                xSize: lineX.value !== '' ? parseFloat(lineX.value) : 1,
+                ySize: lineY.value !== '' ? parseFloat(lineY.value) : 1,
                 xOffset: getOffsetValue('line-xoffset'),
                 yOffset: getOffsetValue('line-yoffset')
             };
@@ -790,7 +1082,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 xOffset: getOffsetValue('label-xoffset'),
                 yOffset: getOffsetValue('label-yoffset'),
                 text: labelText.value || '',
-                fontSize: parseFloat(labelFontSize.value || 12),
+                fontSize: parseFloat(labelFontSize.value || 0),
                 bold: labelBold.checked ? 'true' : 'false',
                 italic: labelItalic.checked ? 'true' : 'false',
                 underline: labelUnderline.checked ? 'true' : 'false',
@@ -813,12 +1105,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 xOffset: getOffsetValue('value-xoffset'),
                 yOffset: getOffsetValue('value-yoffset'),
                 text: valueText.value || '',
-                fontSize: parseFloat(valueFontSize.value || 12),
+                fontSize: parseFloat(valueFontSize.value || 0),
                 bold: valueBold.checked ? 'true' : 'false',
                 italic: valueItalic.checked ? 'true' : 'false',
                 underline: valueUnderline.checked ? 'true' : 'false',
                 align: valueAlign.value || 'left',
-                intValue: parseFloat(valueIntValue.value || 0),
+                intValue: getIntValue(),
                 min: parseFloat(valueMin.value || 0),
                 max: parseFloat(valueMax.value || 1),
                 displayMin: parseFloat(valueDisplayMin.value || 0.0),
@@ -927,15 +1219,15 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Add color for line, rectangle, label, value, circle, and arc only 
         if (itemType === 'line' || itemType === 'rectangle' || itemType === 'label' || itemType === 'value' || itemType === 'circle' || itemType === 'arc') {
-            newItem.color = isNaN(parseInt(itemColor.value))? 15 : parseInt(itemColor.value);
+            newItem.color = isBlackWhiteMode ? -1 : (isNaN(parseInt(itemColor.value)) ? getBlackWhite(drawingData.color) : parseInt(itemColor.value));
         }
         // Note: push, pop, insertDwg, and index items are not available in touchAction mode
         
         if (itemType === 'line') {
             newItem = {
                 ...newItem,
-                x: parseFloat(lineX.value || 1),
-                y: parseFloat(lineY.value || 1),
+                xSize: lineX.value !== '' ? parseFloat(lineX.value) : 1,
+                ySize: lineY.value !== '' ? parseFloat(lineY.value) : 1,
                 xOffset: getOffsetValue('line-xoffset'),
                 yOffset: getOffsetValue('line-yoffset')
             };
@@ -956,7 +1248,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 xOffset: getOffsetValue('label-xoffset'),
                 yOffset: getOffsetValue('label-yoffset'),
                 text: labelText.value || '',
-                fontSize: parseFloat(labelFontSize.value || 12),
+                fontSize: parseFloat(labelFontSize.value || 0),
                 bold: labelBold.checked ? 'true' : 'false',
                 italic: labelItalic.checked ? 'true' : 'false',
                 underline: labelUnderline.checked ? 'true' : 'false',
@@ -979,12 +1271,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 xOffset: getOffsetValue('value-xoffset'),
                 yOffset: getOffsetValue('value-yoffset'),
                 text: valueText.value || '',
-                fontSize: parseFloat(valueFontSize.value || 12),
+                fontSize: parseFloat(valueFontSize.value || 0),
                 bold: valueBold.checked ? 'true' : 'false',
                 italic: valueItalic.checked ? 'true' : 'false',
                 underline: valueUnderline.checked ? 'true' : 'false',
                 align: valueAlign.value || 'left',
-                intValue: parseFloat(valueIntValue.value || 0),
+                intValue: getIntValue(),
                 min: parseFloat(valueMin.value || 0),
                 max: parseFloat(valueMax.value || 1),
                 displayMin: parseFloat(valueDisplayMin.value || 0.0),
@@ -1194,6 +1486,51 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Helper function to get intValue (numeric or COL/ROW)
+    function getIntValue() {
+        const typeSelect = document.getElementById('value-intvalue-type');
+        const input = document.getElementById('value-intvalue');
+        
+        if (!typeSelect) {
+            console.warn('getIntValue: typeSelect not found for value-intvalue');
+            return 0;
+        }
+        
+        console.log(`getIntValue: typeSelect.value = "${typeSelect.value}"`);
+        
+        if (typeSelect.value === 'number') {
+            const numValue = parseFloat(input.value || 0);
+            console.log(`getIntValue: returning number = ${numValue}`);
+            return numValue;
+        } else {
+            console.log(`getIntValue: returning string = "${typeSelect.value}"`);
+            return typeSelect.value; // Returns 'COL' or 'ROW'
+        }
+    }
+
+    // Helper function to set intValue (numeric or COL/ROW) for editing
+    function setIntValue(value) {
+        const typeSelect = document.getElementById('value-intvalue-type');
+        const input = document.getElementById('value-intvalue');
+        
+        if (!typeSelect || !input) {
+            console.warn('setIntValue: elements not found for value-intvalue');
+            return;
+        }
+        
+        if (value === 'COL' || value === 'ROW') {
+            typeSelect.value = value;
+            input.value = '';
+            // Call toggleOffsetInput to properly hide/show the input field
+            toggleOffsetInput('value-intvalue');
+        } else {
+            typeSelect.value = 'number';
+            input.value = value;
+            // Call toggleOffsetInput to properly hide/show the input field
+            toggleOffsetInput('value-intvalue');
+        }
+    }
+
     // Window resize handler to reposition the preview dialog
     function repositionPreviewDialog() {
         const iframeContainer = document.querySelector('.iframe-container');
@@ -1327,7 +1664,8 @@ document.addEventListener('DOMContentLoaded', () => {
             'label-xoffset',
             'label-yoffset',
             'value-xoffset',
-            'value-yoffset'
+            'value-yoffset',
+            'value-intvalue'
         ];
         
         offsetInputs.forEach(inputId => {

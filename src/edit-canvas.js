@@ -339,6 +339,20 @@ document.addEventListener('DOMContentLoaded', () => {
             if (result.success) {
                 console.log('Canvas properties updated successfully');
                 
+                // Automatically save drawing as JSON after successful update only if Auto Save is enabled
+                const autoSaveEnabled = localStorage.getItem('autoSaveEnabled') !== 'false';
+                if (autoSaveEnabled) {
+                    try {
+                        saveDrawingAsJson(originalDrawingName);
+                        console.log('Auto Save enabled - Drawing automatically saved as JSON');
+                    } catch (error) {
+                        console.error('Error auto-saving drawing as JSON:', error);
+                        // Don't block the redirect if JSON save fails
+                    }
+                } else {
+                    console.log('Auto Save disabled - Canvas properties saved to server only');
+                }
+                
                 // Remove event listeners
                 canvasWidthInput.removeEventListener('input', updateCanvasPreview);
                 canvasHeightInput.removeEventListener('input', updateCanvasPreview);
@@ -355,6 +369,30 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error saving canvas properties:', error);
             alert(`Failed to save canvas properties: ${error.message}`);
         });
+    }
+    
+    // Function to save drawing as JSON file
+    function saveDrawingAsJson(drawingName) {
+        if (!drawingName) return;
+        
+        try {
+            console.log(`Exporting drawing "${drawingName}" as JSON`);
+            
+            // Create download link and download the file
+            const downloadLink = document.createElement('a');
+            downloadLink.href = `/api/drawings/${drawingName}/export`;
+            downloadLink.download = `${drawingName}.json`;
+            
+            // Append to body, click to download, then remove
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            
+            console.log(`Drawing "${drawingName}" export triggered`);
+        } catch (error) {
+            console.error(`Error exporting drawing "${drawingName}":`, error);
+            // Don't show alert here since this is automatic - just log the error
+        }
     }
 
 

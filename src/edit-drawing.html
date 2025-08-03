@@ -211,6 +211,12 @@
             padding: 8px 16px;
             font-size: 12px;
         }
+        .btn-save {
+            background-color: #4d4dff;
+            color: white;
+            padding: 8px 16px;
+            font-size: 12px;
+        }
         
         /* Nested items styles */
         .touch-zone-item {
@@ -282,7 +288,7 @@
                         <span id="total-items">-</span>
                     </div>
                 </div>
-                <button id="edit-canvas-btn" class="btn-secondary" style="margin-top: 15px; width: 100%;">Edit Drawing Properties</button>
+                <button id="edit-canvas-btn" class="btn-primary" style="margin-top: 15px; width: 100%;">Edit Drawing Properties</button>
             </div>
 
             <!-- Canvas Properties Edit Form (initially hidden) -->
@@ -314,8 +320,9 @@
             </div>
             
             <div class="action-buttons">
-               <items_label for="item-type">Items List</items_label>
                 <button class="btn btn-primary" id="add-item-btn">Add New Item</button>
+                <button class="btn btn-save" id="save-dwg-btn">Save Dwg</button>
+                <button class="btn btn-secondary" id="auto-save-btn">Auto Save is Off</button>
             </div>
             
             <div class="items-list" id="items-list">

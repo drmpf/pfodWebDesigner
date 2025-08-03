@@ -30,6 +30,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const totalItemsDisplay = document.getElementById('total-items');
     const itemsList = document.getElementById('items-list');
     const addItemBtn = document.getElementById('add-item-btn');
+    const saveDwgBtn = document.getElementById('save-dwg-btn');
+    const autoSaveBtn = document.getElementById('auto-save-btn');
     const previewIframe = document.getElementById('preview-iframe');
     
     // Variables
@@ -38,6 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let tempCanvasDrawingName = null; // For canvas property editing
     let originalRefreshRate = null; // Store original refresh rate during editing
     let editingRefreshRate = null; // Track user's refresh changes during editing
+    let autoSaveEnabled = localStorage.getItem('autoSaveEnabled') !== 'false'; // Auto Save state (default true)
     
     // Initialize
     loadDrawingData();
@@ -46,6 +49,18 @@ document.addEventListener('DOMContentLoaded', () => {
     addItemBtn.addEventListener('click', () => {
         window.location.href = `/add-item.html?drawing=${encodeURIComponent(drawingName)}`;
     });
+    
+    saveDwgBtn.addEventListener('click', () => {
+        saveDrawingAsJson(drawingName);
+    });
+    
+    // Auto Save button event listener
+    autoSaveBtn.addEventListener('click', () => {
+        toggleAutoSave();
+    });
+    
+    // Initialize Auto Save button text
+    updateAutoSaveButton();
     
     // Canvas editing elements
     const editCanvasBtn = document.getElementById('edit-canvas-btn');
@@ -1175,4 +1190,84 @@ document.addEventListener('DOMContentLoaded', () => {
         url += `&cmdName=${encodeURIComponent(cmdName)}`;
         window.location.href = url;
     }
+    
+    // Function to save drawing as JSON file
+    function saveDrawingAsJson(drawingName) {
+        if (!drawingName) return;
+        
+        try {
+            console.log(`Exporting drawing "${drawingName}" as JSON`);
+            
+            // Create download link and download the file
+            const downloadLink = document.createElement('a');
+            downloadLink.href = `/api/drawings/${drawingName}/export`;
+            downloadLink.download = `${drawingName}.json`;
+            
+            // Append to body, click to download, then remove
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            
+            console.log(`Drawing "${drawingName}" export triggered`);
+        } catch (error) {
+            console.error(`Error exporting drawing "${drawingName}":`, error);
+            alert(`Error saving drawing: ${error.message}`);
+        }
+    }
+    
+    // Auto Save functionality
+    function toggleAutoSave() {
+        autoSaveEnabled = !autoSaveEnabled;
+        localStorage.setItem('autoSaveEnabled', autoSaveEnabled.toString());
+        updateAutoSaveButton();
+        console.log(`Auto Save ${autoSaveEnabled ? 'enabled' : 'disabled'}`);
+    }
+    
+    function updateAutoSaveButton() {
+        autoSaveBtn.textContent = autoSaveEnabled ? 'Auto Save is On' : 'Auto Save is Off';
+        autoSaveBtn.className = autoSaveEnabled ? 'btn btn-primary' : 'btn btn-secondary';
+    }
+    
+    function autoSaveIfEnabled() {
+        if (autoSaveEnabled) {
+            console.log('Auto Save triggered - saving drawing as JSON');
+            saveDrawingAsJson(drawingName);
+        }
+    }
+    
+    // Override the original fetch function to add auto save hooks
+    const originalFetch = window.fetch;
+    window.fetch = function(...args) {
+        const [url, options] = args;
+        
+        // Check if this is a server change that should trigger auto save
+        const shouldAutoSave = autoSaveEnabled && (
+            // Canvas changes acceptance
+            (typeof url === 'string' && url.includes('/accept')) ||
+            // Drawing changes from this page
+            (typeof url === 'string' && url.includes('/api/drawings/import') && options?.method === 'POST') ||
+            // Canvas property updates
+            (typeof url === 'string' && url.includes('/update-canvas') && options?.method === 'POST') ||
+            // Refresh rate updates
+            (typeof url === 'string' && url.includes('/update-refresh') && options?.method === 'POST')
+        );
+        
+        const result = originalFetch.apply(this, args);
+        
+        // If this was a change operation and auto save is enabled, trigger save after successful response
+        if (shouldAutoSave) {
+            result.then(response => {
+                if (response.ok) {
+                    // Delay slightly to ensure server has processed the change
+                    setTimeout(() => {
+                        autoSaveIfEnabled();
+                    }, 500);
+                }
+            }).catch(() => {
+                // Ignore fetch errors for auto save purposes
+            });
+        }
+        
+        return result;
+    };
 });

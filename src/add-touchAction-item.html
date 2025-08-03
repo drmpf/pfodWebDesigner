@@ -388,7 +388,12 @@
                     <div class="inline-group">
                         <div class="half-width">
                             <label for="value-intvalue">Integer Value:</label>
-                            <input type="number" id="value-intvalue" value="50" placeholder="Raw integer value">
+                            <select id="value-intvalue-type" onchange="toggleOffsetInput('value-intvalue')">
+                                <option value="number">Number</option>
+                                <option value="COL">COL (Touch Column)</option>
+                                <option value="ROW">ROW (Touch Row)</option>
+                            </select>
+                            <input type="number" id="value-intvalue" value="50" placeholder="Raw integer value" style="margin-top: 5px;">
                         </div>
                         <div class="half-width">
                             <label for="value-decimals">Decimals:</label>
@@ -502,7 +507,10 @@
                 <div style="flex: 1; margin-right: 20px;">
                     <label for="item-color">Color:</label>
                     <input type="hidden" id="item-color" value="0">
-                    <div id="item-color-picker"></div>
+                    <button id="black-white-btn" type="button" style="background-color: #007bff; margin-right: 5px;">BLACK_WHITE</button>
+                    <span style="margin: 0 5px;">OR</span>
+                    <button id="choose-color-btn" type="button" style="background-color: #6c757d; margin-right: 5px;">Color</button>
+                    <div id="item-color-picker" style="display: none; margin-top: 10px"></div>
                 </div>
                 <div style="flex: 0 0 auto;">
                     <label for="item-idx">Index:</label>

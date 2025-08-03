@@ -383,4 +383,61 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('beforeunload', () => {
         cleanupTempState();
     });
+    
+    // Auto Save functionality - fetch override to trigger JSON saves when Auto Save is enabled
+    const originalFetch = window.fetch;
+    window.fetch = function(...args) {
+        const [url, options] = args;
+        
+        // Check if this is a touchAction accept operation and auto save is enabled
+        const autoSaveEnabled = localStorage.getItem('autoSaveEnabled') !== 'false';
+        const shouldAutoSave = autoSaveEnabled && (
+            // TouchAction accept changes
+            (typeof url === 'string' && (url.includes('/api/touchaction-item/') || url.includes('_touchAction_edit')) && url.includes('/accept'))
+        );
+        
+        const result = originalFetch.apply(this, args);
+        
+        // If this was a touchAction accept operation and auto save is enabled, trigger save after successful response
+        if (shouldAutoSave) {
+            result.then(response => {
+                if (response.ok) {
+                    // Save immediately since page will redirect soon
+                    if (autoSaveEnabled && tempDrawingName) {
+                        const originalName = tempDrawingName.replace(/_touchAction_edit$/, '');
+                        console.log('Auto Save enabled - saving touchAction changes as JSON');
+                        saveDrawingAsJson(originalName);
+                    }
+                }
+            }).catch(() => {
+                // Ignore fetch errors for auto save purposes
+            });
+        }
+        
+        return result;
+    };
+    
+    // Function to save drawing as JSON file
+    function saveDrawingAsJson(drawingName) {
+        if (!drawingName) return;
+        
+        try {
+            console.log(`Exporting drawing "${drawingName}" as JSON`);
+            
+            // Create download link and download the file
+            const downloadLink = document.createElement('a');
+            downloadLink.href = `/api/drawings/${drawingName}/export`;
+            downloadLink.download = `${drawingName}.json`;
+            
+            // Append to body, click to download, then remove
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            
+            console.log(`Drawing "${drawingName}" export triggered`);
+        } catch (error) {
+            console.error(`Error exporting drawing "${drawingName}":`, error);
+            // Don't show alert here since this is automatic - just log the error
+        }
+    }
 });
