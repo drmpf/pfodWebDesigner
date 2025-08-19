@@ -1,4 +1,12 @@
 // Shared constants to avoid circular dependencies
-const JS_VERSION = "V1.0.1"; // Keep in sync with pfodWebDebug.js
+  var JS_VERSION = "V1.1.0 -- 17th August 2025";
 
-module.exports = { JS_VERSION };
+// Make available globally for browser use
+if (typeof window !== 'undefined') {
+    window.JS_VERSION = JS_VERSION;
+}
+
+// Export for Node.js use
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { JS_VERSION };
+}

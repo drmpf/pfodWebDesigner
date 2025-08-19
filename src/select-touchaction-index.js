@@ -31,7 +31,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Variables
     let drawingData = null;
     let tempDrawingData = null; // current edit values
-    let originalPreviewDrawingName = null;
+    let originalPreviewDrawingName = null; // The original drawing name for API calls
+    let selectionPreviewDrawingName = null; // The selection_preview drawing name for iframe
     
     // Event Listeners
     backBtn.addEventListener('click', () => {
@@ -104,7 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
-    // Function to display indexed items
+    // Function to display indexed items (using same logic as add-item.js populateIndexLists)
     function displayIndexedItems() {
         if (!drawingData || !drawingData.items || drawingData.items.length === 0) {
             itemsList.innerHTML = '<div class="no-items">No items found in drawing</div>';
@@ -124,45 +125,80 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         console.log(`Found existing touchAction indices for cmdName "${cmdName}":`, Array.from(existingTouchActionIndices));
-        let tempDwgIndexedItems = []
         if (tempDrawingData) {
-         // console.log(`displayIndexedItems tempDrawingData :`, JSON.stringify(tempDrawingData,null,2));
-          tempDrawingData.items.forEach(item => {
-            if (item.type === 'touchAction' && item.cmdName === cmdName && item.action) {
-                item.action.forEach(actionItem => {
-                    if (actionItem.idxName !== undefined && actionItem.idxName.trim() !== '') {
-                        existingTouchActionIndices.add(actionItem.idxName);
-                    }
-                });
-            }
-          });
-        }
-        // Get all items that have an idx property (indexed items)
-        const indexedItems = [];
-        const otherItems = [];
-        
-        drawingData.items.forEach((item, globalIndex) => {
-            if (item.idxName !== undefined && item.idxName.trim() !== '') {
-                const itemIdxName = item.idxName;
-                
-                // Only include items that don't already have a touchAction for this cmdName
-                if (!existingTouchActionIndices.has(itemIdxName)) {
-                    indexedItems.push({
-                        item: item,
-                        globalIndex: globalIndex, // row index
-                        idxName: itemIdxName,
-                        idx: item.idx
+            tempDrawingData.items.forEach(item => {
+                if (item.type === 'touchAction' && item.cmdName === cmdName && item.action) {
+                    item.action.forEach(actionItem => {
+                        if (actionItem.idxName !== undefined && actionItem.idxName.trim() !== '') {
+                            existingTouchActionIndices.add(actionItem.idxName);
+                        }
                     });
-                   console.log(`Found unused `, JSON.stringify(item));
                 }
-            } else {
-                otherItems.push({
-                    item: item,
-                    globalIndex: globalIndex, // row index
-                    idx: item.idx
-                });
+            });
+        }
+        
+        // Get all indexed items in original drawing order, but filter out:
+        // - temporary items (have __isTemporary flag)
+        // Use Map to handle duplicates - later items with same idxName replace earlier ones
+        // Also process hide/unhide/erase operations during building
+        const indexedItemsMap = new Map();
+        drawingData.items.forEach((item, globalIndex) => {
+            if (item.idxName !== undefined && 
+                item.idxName.trim() !== '' && 
+                item.type !== 'touchActionInput' && 
+                !item.__isTemporary) {
+                
+                // Handle hide/unhide/erase operations
+                if (item.type === 'hide' && item.idxName) {
+                    // Hide operation: update visible state if item exists
+                    if (indexedItemsMap.has(item.idxName)) {
+                        const existingItem = indexedItemsMap.get(item.idxName);
+                        existingItem.item.visible = false;
+                    }
+                } else if (item.type === 'unhide' && item.idxName) {
+                    // Unhide operation: update visible state if item exists
+                    if (indexedItemsMap.has(item.idxName)) {
+                        const existingItem = indexedItemsMap.get(item.idxName);
+                        existingItem.item.visible = true;
+                    }
+                } else if (item.type === 'erase' && item.idxName) {
+                    // Erase operation: remove item from map
+                    indexedItemsMap.delete(item.idxName);
+                } else if (item.type === 'index') {
+                    // Index item: only add if no existing item, ignore if already exists
+                    if (!indexedItemsMap.has(item.idxName)) {
+                        const newItem = {
+                            item: {...item},
+                            globalIndex: globalIndex,
+                            idxName: item.idxName,
+                            idx: item.idx
+                        };
+                        indexedItemsMap.set(item.idxName, newItem);
+                    }
+                } else {
+                    // Regular item: add or replace in map, preserving visibility state
+                    const existingVisible = indexedItemsMap.has(item.idxName) ? 
+                        indexedItemsMap.get(item.idxName).item.visible : item.visible;
+                    
+                    const newItem = {
+                        item: {...item, visible: existingVisible},
+                        globalIndex: globalIndex,
+                        idxName: item.idxName,
+                        idx: item.idx
+                    };
+                    
+                    indexedItemsMap.set(item.idxName, newItem);
+                }
             }
         });
+        
+        // Convert Map values back to array, preserving the order of latest occurrences
+        const allIndexedItems = Array.from(indexedItemsMap.values());
+        
+        // Filter out items that already have touchActions for this cmdName
+        const indexedItems = allIndexedItems.filter(indexedItem => 
+            !existingTouchActionIndices.has(indexedItem.idxName)
+        );
         
         // Sort indexed items by their idx value
         indexedItems.sort((a, b) => a.idx - b.idx);
@@ -219,26 +255,37 @@ document.addEventListener('DOMContentLoaded', () => {
         const actionsDiv = document.createElement('div');
         actionsDiv.className = 'item-actions';
         
+        // Create show button but only add it if item is not an index type
         const showBtn = document.createElement('button');
         showBtn.className = 'btn btn-show';
         showBtn.textContent = 'Show';
         showBtn.onmousedown = (e) => {
-            console.log(`[SHOW_BUTTON] mousedown event on idx ${indexedItem.idx}`);
+            console.log(`[SHOW_BUTTON] mousedown event on idxName ${indexedItem.idxName}`);
             e.preventDefault();
-            hideItemInPreview(indexedItem.idx);
+            // Check visibility: if false then unhide, else hide
+            if (indexedItem.item.visible === false) {
+                // Item is hidden, so unhide it
+                hideItemInPreview(indexedItem.idxName, false);
+            } else {
+                // Item is visible (undefined, true, or any other value), so hide it
+                hideItemInPreview(indexedItem.idxName, true);
+            }
         };
         showBtn.onmouseup = (e) => {
-            console.log(`[SHOW_BUTTON] mouseup event on idx ${indexedItem.idx}`);
+            console.log(`[SHOW_BUTTON] mouseup event on idxName ${indexedItem.idxName}`);
             e.preventDefault();
             restorePreview();
         };
+        
+        // Check if this is an index item (index items don't get show buttons)
+        const isIndexItem = indexedItem.item.type === 'index';
         
         const replaceBtn = document.createElement('button');
         replaceBtn.className = 'btn btn-replace';
         replaceBtn.textContent = 'Replace on Touch';
         replaceBtn.onclick = () => proceedToItemSelection(indexedItem.idx, 'replace');
         
-        actionsDiv.appendChild(showBtn);
+        if (!isIndexItem) actionsDiv.appendChild(showBtn);
         actionsDiv.appendChild(replaceBtn);
         
         element.appendChild(indexDiv);
@@ -305,7 +352,6 @@ document.addEventListener('DOMContentLoaded', () => {
     function initializePreview() {
         // Get the original drawing name (remove _touchAction_edit suffix)
         const originalDrawingName = tempDrawingName.replace('_touchAction_edit', '');
-        originalPreviewDrawingName = originalDrawingName;
         
         // Create initial filtered preview on server
         fetch(`/api/drawings/${encodeURIComponent(originalDrawingName)}/create-initial-preview`, {
@@ -317,25 +363,33 @@ document.addEventListener('DOMContentLoaded', () => {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
+                // Keep the original drawing name for API calls, but store the selection_preview name for iframe
+                originalPreviewDrawingName = originalDrawingName; // For API calls like hide/restore
+                selectionPreviewDrawingName = data.previewDrawingName; // For iframe display
+                
                 // Set up the preview iframe to show the filtered preview (no auto-refresh, no touchActionInputs)
                 setupPreviewIframeWithDrawing(previewIframe, data.previewDrawingName, true);
                 console.log(`Initialized preview iframe with filtered preview: ${data.previewDrawingName}`);
             } else {
                 console.error('Error creating initial preview:', data.error);
                 // Fallback to original drawing
+                originalPreviewDrawingName = originalDrawingName;
+                selectionPreviewDrawingName = originalDrawingName;
                 setupPreviewIframeWithDrawing(previewIframe, originalDrawingName, true);
             }
         })
         .catch(error => {
             console.error('Error creating initial preview:', error);
             // Fallback to original drawing
+            originalPreviewDrawingName = originalDrawingName;
+            selectionPreviewDrawingName = originalDrawingName;
             setupPreviewIframeWithDrawing(previewIframe, originalDrawingName, true);
         });
     }
     
     // Function to hide specific item in preview
-    function hideItemInPreview(itemIdx) {
-        console.log(`[SHOW_BUTTON] Hiding item idx ${itemIdx} in preview`);
+    function hideItemInPreview(itemIdxName, isVisible = true) {
+        console.log(`[SHOW_BUTTON] ${isVisible ? 'Hiding' : 'Unhiding'} item idxName ${itemIdxName} in preview`);
         
         // Call server endpoint to temporarily hide the item
         fetch(`/api/drawings/${encodeURIComponent(originalPreviewDrawingName)}/preview-hide-item`, {
@@ -343,20 +397,20 @@ document.addEventListener('DOMContentLoaded', () => {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ idx: itemIdx })
+            body: JSON.stringify({ idxName: itemIdxName, isVisible: isVisible })
         })
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                console.log(`[SHOW_BUTTON] Item hidden on server side, refreshing iframe for update`);
+                console.log(`[SHOW_BUTTON] Item ${isVisible ? 'hidden' : 'unhidden'} on server side, refreshing iframe for update`);
                 // Trigger restart in existing iframe instead of reloading
                 safelyCallInitializeApp(previewIframe);
             } else {
-                console.error('Error hiding item in preview:', data.error);
+                console.error(`Error ${isVisible ? 'hiding' : 'unhiding'} item in preview:`, data.error);
             }
         })
         .catch(error => {
-            console.error('Error hiding item in preview:', error);
+            console.error(`Error ${isVisible ? 'hiding' : 'unhiding'} item in preview:`, error);
         });
     }
     

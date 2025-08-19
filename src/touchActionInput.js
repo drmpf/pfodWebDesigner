@@ -41,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let isEditMode = false;
     let availableIndexedItems = [];
     let tempDrawingName = null; // Single temporary drawing for previews
+    let touchZoneCmd = null; // The cmd from the touchZone with matching cmdName
     
     // Initialize color pickers
     createColorPicker('color-picker', 'color-input', 15);
@@ -111,6 +112,17 @@ document.addEventListener('DOMContentLoaded', () => {
             drawingNameDisplay.textContent = drawingName;
             touchZoneCmdDisplay.textContent = cmdName;
             
+            // Find the touchZone with matching cmdName to get its cmd
+            const touchZone = drawingData.items.find(item => 
+                item.type === 'touchZone' && item.cmdName === cmdName
+            );
+            if (touchZone) {
+                touchZoneCmd = touchZone.cmd;
+                console.log(`Found touchZone with cmdName=${cmdName}, cmd=${touchZoneCmd}`);
+            } else {
+                console.warn(`No touchZone found with cmdName=${cmdName}`);
+            }
+            
             // Populate textIdx dropdown
             populateTextIdxDropdown();
             
@@ -153,7 +165,9 @@ document.addEventListener('DOMContentLoaded', () => {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({})
+            body: JSON.stringify({
+                mode: 'touchActionInput'
+            })
         })
         .then(response => {
             if (!response.ok) {
@@ -184,8 +198,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             console.log('Disabled refresh on temporary drawing for touchActionInput editing');
             
-            // Set up the iframe source to use the temp drawing for full context
-            setupPreviewIframeWithDrawing(previewIframe, tempDrawingName);
+            // Set up the iframe source to use the preview drawing for full context with updated touchActionInput
+            const previewDrawingName = `${tempDrawingName}_preview`;
+            setupPreviewIframeWithDrawing(previewIframe, previewDrawingName);
             
             // Now run initial preview update
             updatePreview();
@@ -294,7 +309,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Create touchActionInput item
         const touchActionInputItem = {
             type: 'touchActionInput',
-         //   cmd: cmd,
+            cmd: touchZoneCmd,
             cmdName: cmdName,
             prompt: prompt,
             textIdx: textIdx,
@@ -306,52 +321,56 @@ document.addEventListener('DOMContentLoaded', () => {
         
         console.log('Saving touchActionInput:', touchActionInputItem);
         
-        if (isEditMode) {
-            // Update existing item
-            currentDrawingData.items[editingItemIndex] = touchActionInputItem;
-        } else {
-            // Add new item - insert after the touchZone with same cmd
-            const touchZoneIndex = currentDrawingData.items.findIndex(item => 
-                item.type === 'touchZone' && item.cmdName === cmdName
-            );
-            
-            if (touchZoneIndex !== -1) {
-                // Insert right after the touchZone
-                currentDrawingData.items.splice(touchZoneIndex + 1, 0, touchActionInputItem);
-            } else {
-                // Fallback: add at end if touchZone not found
-                currentDrawingData.items.push(touchActionInputItem);
-            }
+        // Add the touchActionInput to the temp drawing via temp-update
+        if (!tempDrawingName) {
+            alert('No temporary drawing available');
+            return;
         }
         
-        // Save the drawing
-        saveDrawingChanges();
-    }
-    
-    // Function to save drawing changes
-    function saveDrawingChanges() {
-        fetch('/api/drawings/import', {
+        fetch(`/api/drawings/${encodeURIComponent(tempDrawingName)}/temp-update`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(currentDrawingData)
+            body: JSON.stringify({
+                itemType: 'touchActionInput',
+                item: touchActionInputItem,
+                editIndex: isEditMode ? editingItemIndex : null
+            })
         })
         .then(response => response.json())
         .then(result => {
             if (result.success) {
-                console.log('TouchActionInput saved successfully');
-                // Cleanup temp preview before navigating
-                cleanupTempPreview();
-                // Navigate back to edit drawing
-                window.location.href = `/edit-drawing.html?drawing=${encodeURIComponent(drawingName)}`;
+                console.log('TouchActionInput added to temp drawing successfully');
+                // Now accept the changes to commit to main drawing
+                return acceptTouchActionInputChanges();
             } else {
-                throw new Error(result.error || 'Failed to save touchActionInput');
+                throw new Error(result.error || 'Failed to add touchActionInput to temp drawing');
             }
         })
         .catch(error => {
             console.error('Error saving touchActionInput:', error);
             alert(`Failed to save touchActionInput: ${error.message}`);
+        });
+    }
+    
+    // Function to accept touchActionInput changes (commit to main drawing)
+    function acceptTouchActionInputChanges() {
+        return fetch(`/api/drawings/${encodeURIComponent(tempDrawingName)}/accept`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                console.log('TouchActionInput changes accepted successfully');
+                // Navigate back to edit drawing (temp drawings cleaned up by server)
+                window.location.href = `/edit-drawing.html?drawing=${encodeURIComponent(drawingName)}`;
+            } else {
+                throw new Error(result.error || 'Failed to accept touchActionInput changes');
+            }
         });
     }
     
@@ -372,7 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Create the touchActionInput item for preview
         const tempTouchActionInput = {
             type: 'touchActionInput',
-          //  cmd: cmd,
+            cmd: touchZoneCmd,
             cmdName: cmdName,
             prompt: promptInput.value.trim() || 'Enter Value',
             textIdx: textIdx,
@@ -474,9 +493,15 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update prompt text
         previewPrompt.textContent = prompt;
         
-        // Update input field with initial text
+        // Update input field with initial text - force clear and set to ensure it shows
         const initialText = getInitialTextForPreview();
-        previewInput.value = initialText;
+        previewInput.value = '';  // Clear first
+        if (initialText) {
+            previewInput.value = initialText;
+            previewInput.placeholder = initialText;  // Also set as placeholder for visibility
+        } else {
+            previewInput.placeholder = '';  // Default placeholder when no label selected
+        }
         
         // Apply font size using the shared function from displayTextUtils
         const actualFontSize = getActualFontSizeForDialog(fontSize);
@@ -505,8 +530,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // Check if this is a touchActionInput save operation and auto save is enabled
         const autoSaveEnabled = localStorage.getItem('autoSaveEnabled') !== 'false';
         const shouldAutoSave = autoSaveEnabled && (
-            // TouchActionInput save changes
-            (typeof url === 'string' && url.includes('/api/drawings/import') && options && options.method === 'POST')
+            // TouchActionInput accept changes (new workflow)
+            (typeof url === 'string' && url.includes('/accept') && options && options.method === 'POST')
         );
         
         const result = originalFetch.apply(this, args);

@@ -8,6 +8,12 @@
  * provided this copyright is maintained.
  */
 
+// Helper function to truncate text to prevent UI overflow
+function truncateText(text, maxLength = 10) {
+    if (!text) return '';
+    return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     console.log("Add item page loaded");
     
@@ -31,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const pushProperties = document.getElementById('push-properties');
     const popProperties = document.getElementById('pop-properties');
     const indexProperties = document.getElementById('index-properties');
-    const eraseProperties = document.getElementById('erase-properties');
+ //   const eraseProperties = document.getElementById('erase-properties');
     const hideProperties = document.getElementById('hide-properties');
     const unhideProperties = document.getElementById('unhide-properties');
     const insertDwgProperties = document.getElementById('insertDwg-properties');
@@ -70,6 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const pushY = document.getElementById('push-y');
     const pushScale = document.getElementById('push-scale');
     const insertDwgName = document.getElementById('insertDwg-name');
+    const insertDwgCmdName = document.getElementById('insertDwg-cmdName');
     const insertDwgXOffset = document.getElementById('insertDwg-xoffset');
     const insertDwgYOffset = document.getElementById('insertDwg-yoffset');
     const labelXOffset = document.getElementById('label-xoffset');
@@ -155,11 +162,10 @@ document.addEventListener('DOMContentLoaded', () => {
             chooseColorBtn.style.backgroundColor = '#007bff';
             blackWhiteBtn.style.backgroundColor = '#6c757d';
             colorPicker.style.display = 'block';
-            // Update color value to currently displayed color when switching to COLOR mode
-            if (drawingData && itemColor) {
-                const currentDisplayedColor = getBlackWhite(drawingData.color);
-                itemColor.value = currentDisplayedColor;
-                updateColorPickerDisplay('item-color', currentDisplayedColor);
+            // Don't override itemColor.value here - it should be set by populateFormFieldsForItem
+            // Only update color picker display if there's already a color value
+            if (itemColor && itemColor.value !== undefined && itemColor.value !== '') {
+                updateColorPickerDisplay('item-color', parseInt(itemColor.value));
             }
         }
         // Note: updatePreview() is not called here to avoid resetting form values during edit mode
@@ -182,8 +188,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let originalTouchZoneCmd = null; // Store original cmdName value for touchZone editing
     let tempDrawingName = null; // Temporary drawing name for editing
     let drawingData = null; // Drawing data
+    let previousItemType = null; // Track previous item type for preview update logic
+    
+    // Lists of existing names for uniqueness checking
+    let existingIdxNames = [];
+    let existingCmdNames = [];
     let canvasWidth = 50; // Canvas width 
     let canvasHeight = 50; // Canvas height
+    let originalPreviewDrawingName = null; // Preview drawing name for show button functionality
+    let lastHiddenItemIdx = null; // Track the last hidden item index for unhiding
     let isFirstDrawingDataLoad = true; // Flag to track first load for color picker reset
     
     // Function to toggle index name field visibility
@@ -208,82 +221,88 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Function to generate unique index name
     function generateUniqueIndexName() {
-        if (!drawingData || !drawingData.items) {
-            return 'idx_1';
-        }
-        
-        const existingNames = new Set();
-        drawingData.items.forEach((item, index) => {
-            if (item.idxName && (!isEditMode || index !== parseInt(editIndex))) {
-                existingNames.add(item.idxName);
-            }
-        });
-        
         let counter = 1;
         let newName = `idx_${counter}`;
-        while (existingNames.has(newName)) {
+        while (existingIdxNames.includes(newName)) {
             counter++;
             newName = `idx_${counter}`;
         }
-        
         return newName;
     }
     
     // Function to generate unique touchZone command name
     function generateUniqueTouchZoneCommandName() {
-        if (!drawingData || !drawingData.items) {
-            return 'cmd_c1';
-        }
-        
-        const existingCommandNames = new Set();
-        drawingData.items.forEach((item, index) => {
-            if (item.type === 'touchZone' && item.cmdName && (!isEditMode || index !== parseInt(editIndex))) {
-                existingCommandNames.add(item.cmdName);
-            }
-        });
-        
         let counter = 1;
         let newCommandName = `cmd_c${counter}`;
-        while (existingCommandNames.has(newCommandName)) {
+        while (existingCmdNames.includes(newCommandName)) {
             counter++;
             newCommandName = `cmd_c${counter}`;
         }
-        
         return newCommandName;
     }
     
+    function generateInsertDwgCommandName(drawingName) {
+        if (!drawingName) return '';
+        return `dwg_${drawingName}`;
+    }
+    
     // Function to check if touchZone command name is unique
-    function isTouchZoneCommandNameUnique(cmdName) {
-        if (!drawingData || !drawingData.items) return true;
+    // Function to build lists of existing names
+    function buildExistingNameLists() {
+        existingIdxNames = [];
+        existingCmdNames = [];
+        
+        if (!drawingData || !drawingData.items) return;
         
         for (let i = 0; i < drawingData.items.length; i++) {
             const item = drawingData.items[i];
-            // Skip the current item being edited
-            if (isEditMode && i === parseInt(editIndex)) continue;
             
-            if (item.type === 'touchZone' && item.cmdName === cmdName) {
-                return false;
+            // Collect idxNames (skip index, erase, hide, unhide, touchActionInput items)
+            // touchActionInput references existing indexed items, doesn't create new idxNames
+            if (item.idxName && item.type !== 'erase' && 
+                item.type !== 'hide' && item.type !== 'unhide' && item.type !== 'touchActionInput') {
+                // check if already there i.e. index then real item
+                if (!existingIdxNames.includes(item.idxName)) {
+                  existingIdxNames.push(item.idxName);
+                }
+            }
+            
+            // Collect cmdNames from touchZones and insertDwg items
+            // touchAction and touchActionInput reference existing touchZones, don't create new cmdNames  
+            if ((item.type === 'touchZone' || item.type === 'insertDwg') && item.cmdName) {
+                if (!existingCmdNames.includes(item.cmdName)) {
+                  existingCmdNames.push(item.cmdName);
+                }
             }
         }
-        return true;
+        
+        // If editing an existing item, remove its names from the lists
+        if (isEditMode && editingItem) {
+            if (editingItem.idxName) {
+                const idxIndex = existingIdxNames.indexOf(editingItem.idxName);
+                if (idxIndex > -1) {
+                    existingIdxNames.splice(idxIndex, 1);
+                }
+            }
+            if (editingItem.cmdName && (editingItem.type === 'touchZone' || editingItem.type === 'insertDwg')) {
+                const cmdIndex = existingCmdNames.indexOf(editingItem.cmdName);
+                if (cmdIndex > -1) {
+                    existingCmdNames.splice(cmdIndex, 1);
+                }
+            }
+        }
+        
+        console.log('Existing idxNames:', existingIdxNames);
+        console.log('Existing cmdNames:', existingCmdNames);
+    }
+    
+    function isTouchZoneCommandNameUnique(cmdName) {
+        return !existingCmdNames.includes(cmdName);
     }
     
     // Function to check if index name is unique
     function isIndexNameUnique(name) {
-        if (!drawingData || !drawingData.items) return true;
-        
-        for (let i = 0; i < drawingData.items.length; i++) {
-            const item = drawingData.items[i];
-            // Skip the current item being edited
-            if (isEditMode && i === parseInt(editIndex)) continue;
-            if ((item.type == 'index') || (item.type == 'erase') || (item.type == 'hide') || (item.type == 'unhide')) {
-              continue;
-            }            
-            if (item.idxName === name) {
-                return false;
-            }
-        }
-        return true;
+        return !existingIdxNames.includes(name);
     }
     
     // Function to initialize the server with the drawing name and set up the iframe
@@ -406,7 +425,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Add event listeners for all form inputs to update the preview
     [lineX, lineY, lineXOffset, lineYOffset, rectXOffset, rectYOffset, 
      rectWidth, rectHeight, rectStyle, rectCentered, rectCorners, 
-     pushX, pushY, pushScale, insertDwgName,insertDwgXOffset, insertDwgYOffset,
+     pushX, pushY, pushScale, insertDwgName, insertDwgXOffset, insertDwgYOffset,
      labelXOffset, labelYOffset, labelText, labelFontSize, labelAlign, labelBold, labelItalic, labelUnderline, labelValue, labelDecimals, labelUnits,
      valueXOffset, valueYOffset, valueText, valueFontSize, valueAlign, valueBold, valueItalic, valueUnderline,
      valueIntValue, valueMin, valueMax, valueDisplayMin, valueDisplayMax, valueDecimals, valueUnits,
@@ -425,15 +444,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (itemIdxName) {
         itemIdxName.addEventListener('blur', function() {
             if (itemIdxEnable.checked && itemIdxName.value.trim()) {
-                if (!isIndexNameUnique(itemIdxName.value.trim())) {
-                    itemIdxName.style.borderColor = 'red';
-                    itemIdxName.style.backgroundColor = '#ffebee';
-                    itemIdxName.title = 'This index name is already in use. Please choose a different name.';
-                } else {
+            //    if (!isIndexNameUnique(itemIdxName.value.trim())) {
+            //        itemIdxName.style.borderColor = 'red';
+            //        itemIdxName.style.backgroundColor = '#ffebee';
+            //        itemIdxName.title = 'This index name is already in use. Please choose a different name.';
+            //    } else {
                     itemIdxName.style.borderColor = '';
                     itemIdxName.style.backgroundColor = '';
                     itemIdxName.title = '';
-                }
+            //    }
             }
         });
         
@@ -499,7 +518,7 @@ document.addEventListener('DOMContentLoaded', () => {
         pushProperties.style.display = 'none';
         popProperties.style.display = 'none';
         indexProperties.style.display = 'none';
-        eraseProperties.style.display = 'none';
+   //     eraseProperties.style.display = 'none';
         hideProperties.style.display = 'none';
         unhideProperties.style.display = 'none';
         insertDwgProperties.style.display = 'none';
@@ -843,9 +862,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if ((editingItem) && (editingItem.type == 'insertDwg')) {
           insertDwgXOffset.value = (isDefinedAndNotNull(editingItem.xOffset)?editingItem.xOffset:0);
           insertDwgYOffset.value = (isDefinedAndNotNull(editingItem.yOffset)?editingItem.yOffset:0);
+          // Generate cmdName based on drawing name when editing
+          insertDwgCmdName.value = generateInsertDwgCommandName(editingItem.drawingName);
         } else {
           insertDwgXOffset.value = 0;
           insertDwgYOffset.value = 0;
+          // cmdName will be set when drawing is selected
+          insertDwgCmdName.value = '';
         }
         // Refresh available drawings and update preview when done
         loadAvailableDrawings(() => {
@@ -876,21 +899,54 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function setupEraseItem() {
-        eraseProperties.style.display = 'block';
+        // Use hide properties UI since erase HTML is commented out
+        hideProperties.style.display = 'block';
+        // Hide Add Item button for erase items - user must click the Erase button from the list
+        if (addItemBtn) {
+            addItemBtn.style.display = 'none';
+        }
+        // Trigger the initial dropdown change to populate lists (use hide-type dropdown)
+        const hideTypeSelect = document.getElementById('hide-type');
+        if (hideTypeSelect) {
+            hideTypeSelect.dispatchEvent(new Event('change'));
+        }
     }
     
     function setupHideItem() {
         hideProperties.style.display = 'block';
+        // Hide Add Item button for hide items in both add and edit mode
+        if (addItemBtn) {
+            addItemBtn.style.display = 'none';
+        }
+        // Trigger the initial dropdown change to populate lists
+        const hideTypeSelect = document.getElementById('hide-type');
+        if (hideTypeSelect) {
+            hideTypeSelect.dispatchEvent(new Event('change'));
+        }
     }
     
     function setupUnhideItem() {
         unhideProperties.style.display = 'block';
+        // Hide Add Item button for unhide items in both add and edit mode
+        if (addItemBtn) {
+            addItemBtn.style.display = 'none';
+        }
+        // Trigger the initial dropdown change to populate lists
+        const unhideTypeSelect = document.getElementById('unhide-type');
+        if (unhideTypeSelect) {
+            unhideTypeSelect.dispatchEvent(new Event('change'));
+        }
     }
     
     // Main item type change handler
     function handleItemTypeChange() {
         const itemType = itemTypeDropdown.value;
-        console.log(`Item type changed to: ${itemType}`);
+        console.log(`Item type changed to: ${itemType}`, `Previous: ${previousItemType}`);
+        
+        // Show Add Item button by default (will be hidden for hide/unhide/erase in add mode)
+        if (addItemBtn) {
+            addItemBtn.style.display = 'inline-block';
+        }
         
         // Hide all property sections first
         hideAllProperties();
@@ -910,7 +966,24 @@ document.addEventListener('DOMContentLoaded', () => {
             handleControlItem(itemType);
         }
         
-        updatePreview();
+        // Handle preview update logic:
+        // - Always update preview when switching TO hide/unhide/erase from another type
+        // - Skip preview update when editing existing hide/unhide/erase items
+        const isHideUnhideErase = (itemType === 'hide' || itemType === 'unhide' || itemType === 'erase');
+        const wasHideUnhideErase = (previousItemType === 'hide' || previousItemType === 'unhide' || previousItemType === 'erase');
+        
+        if (!isHideUnhideErase) {
+            // Always update preview for non-hide/unhide/erase items
+            updatePreview();
+        } else if (isHideUnhideErase && !wasHideUnhideErase && previousItemType !== null) {
+            // Switching TO hide/unhide/erase FROM another type - update preview to remove initial line item
+            console.log(`Switching from ${previousItemType} to ${itemType} - updating preview to remove initial item`);
+            updatePreview();
+        }
+        // Skip preview update when already on hide/unhide/erase or when editing existing hide/unhide/erase
+        
+        // Update previous item type for next change
+        previousItemType = itemType;
     }
     
     // Fetch drawing information
@@ -921,6 +994,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 drawingData = data;
                 canvasWidth = data.canvasWidth || data.x || 100;
                 canvasHeight = data.canvasHeight || data.y || 100;
+                
+                // Build lists of existing names for uniqueness checking
+                buildExistingNameLists();
                 
                 // Reset color picker to proper default on first load
                 if (isFirstDrawingDataLoad) {
@@ -958,6 +1034,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (!isEditMode) {
                     handleItemTypeChange();
                 }
+                
+                // Populate index lists for hide/unhide/erase operations
+                populateIndexLists();
+                
+                // Populate command lists for hide/unhide operations
+                populateTouchZones();
+                populateInsertedDwgs();
+                
+                // Initialize toggle states for lists (show index lists if "By Index" is selected)
+                initializeToggleStates();
                 
                 // Add 1-second timer to post current item values after page load
                 setTimeout(() => {
@@ -1002,6 +1088,9 @@ document.addEventListener('DOMContentLoaded', () => {
             editingItem = drawingData.items[editIndex];
             console.log('Loaded item for editing:', editingItem);
             
+            // Build lists of existing names for uniqueness checking
+            buildExistingNameLists();
+            
             // Store original cmd value for touchZone items to link up later
             if (editingItem.type === 'touchZone' && editingItem.cmd) {
                 originalTouchZoneCmd = editingItem.cmd;
@@ -1045,19 +1134,18 @@ document.addEventListener('DOMContentLoaded', () => {
         // Set the item type dropdown
         if (itemTypeDropdown && item.type) {
             itemTypeDropdown.value = item.type;
-            
         }
         
+        // Show the correct property panel FIRST so form elements are created
+        handleItemTypeChange();
         
-        // For all other types, populate immediately
+        // Now populate the form fields after the correct form section is shown
         populateFormFieldsForItem(item);
         
-        // Now that the form is populated with the correct item type, 
-        // add the event listener for future changes
+        // Add the event listener for future changes
         if (isEditMode) {
             itemTypeDropdown.addEventListener('change', handleItemTypeChange);
         }
-        handleItemTypeChange(); // Show the correct property panel
     }
     
     // Helper function to populate form fields (separated from async dropdown loading)
@@ -1085,7 +1173,8 @@ document.addEventListener('DOMContentLoaded', () => {
             updateColorPickerDisplay('item-color', item.color);
           }
         }
-        if (item.indexed) {
+        // Handle index fields for items that support indexing (but not hide/unhide/erase)
+        if (item.indexed && item.type !== 'hide' && item.type !== 'unhide' && item.type !== 'erase') {
             itemIdxEnable.checked = true;
             itemIdxName.style.display = 'block';
             
@@ -1093,7 +1182,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (item.idxName) {
                 itemIdxName.value = item.idxName;
             }
-        } else {
+        } else if (item.type !== 'hide' && item.type !== 'unhide' && item.type !== 'erase') {
+            // Only reset index fields for non-hide/unhide/erase items
             itemIdxEnable.checked = false;
             itemIdxName.style.display = 'none';
             itemIdxName.value = '';
@@ -1138,6 +1228,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
             case 'insertDwg':
                 if (insertDwgName && item.drawingName !== undefined) insertDwgName.value = item.drawingName;
+                if (insertDwgCmdName && item.cmdName !== undefined) insertDwgCmdName.value = item.cmdName;
                 if (insertDwgXOffset && item.xOffset !== undefined) insertDwgXOffset.value = item.xOffset;
                 if (insertDwgYOffset && item.yOffset !== undefined) insertDwgYOffset.value = item.yOffset;
                 break;
@@ -1192,46 +1283,91 @@ document.addEventListener('DOMContentLoaded', () => {
                 
             case 'hide':
                 const hideTypeSelect = document.getElementById('hide-type');
-                const hideIdxInput = document.getElementById('hide-idx');
                 const hideCmdInput = document.getElementById('hide-cmd');
-                if (item.idx !== undefined) {
+                if (item.idxName !== undefined) {
                     hideTypeSelect.value = 'idx';
-                    hideIdxInput.value = item.idx;
-                    toggleHideInputs();
-                } else if (item.cmd !== undefined) {
-                    hideTypeSelect.value = 'cmd';
-                    hideCmdInput.value = item.cmd;
-                    toggleHideInputs();
+                    // Trigger the change event to properly initialize the display
+                    hideTypeSelect.dispatchEvent(new Event('change'));
+                    // Highlight the current selection and hide its action button
+                    highlightSelectedItem('hide', item.idxName);
+                    console.log(`[EDIT] Hide item with idx ${item.idx} - list interface will be shown`);
+                } else if (item.cmdName !== undefined) {
+                    // Check if this is an insertDwg item
+                    if (item.drawingName !== undefined) {
+                        hideTypeSelect.value = 'dwg';
+                        // Trigger the change event to properly initialize the display
+                        hideTypeSelect.dispatchEvent(new Event('change'));
+                        // Highlight the current selection in the dwg list
+                        highlightSelectedDwgItem('hide', item.cmdName);
+                        console.log(`[EDIT] Hide insertDwg item with cmdName ${item.cmdName} - dwg list interface will be shown`);
+                    } else {
+                        hideTypeSelect.value = 'cmd';
+                        // Trigger the change event to properly initialize the display
+                        hideTypeSelect.dispatchEvent(new Event('change'));
+                        // Highlight the current selection in the command list
+                        highlightSelectedCommandItem('hide', item.cmdName);
+                        console.log(`[EDIT] Hide touchZone item with cmdName ${item.cmdName} - command list interface will be shown`);
+                    }
                 }
                 break;
                 
             case 'unhide':
                 const unhideTypeSelect = document.getElementById('unhide-type');
-                const unhideIdxInput = document.getElementById('unhide-idx');
                 const unhideCmdInput = document.getElementById('unhide-cmd');
-                if (item.idx !== undefined) {
+                if (item.idxName !== undefined) {
                     unhideTypeSelect.value = 'idx';
-                    unhideIdxInput.value = item.idx;
-                    toggleUnhideInputs();
-                } else if (item.cmd !== undefined) {
-                    unhideTypeSelect.value = 'cmd';
-                    unhideCmdInput.value = item.cmd;
-                    toggleUnhideInputs();
+                    // Trigger the change event to properly initialize the display
+                    unhideTypeSelect.dispatchEvent(new Event('change'));
+                    // Highlight the current selection and hide its action button
+                    highlightSelectedItem('unhide', item.idxName);
+                    console.log(`[EDIT] Unhide item with idx ${item.idx} - list interface will be shown`);
+                } else if (item.cmdName !== undefined) {
+                    // Check if this is an insertDwg item
+                    if (item.drawingName !== undefined) {
+                        unhideTypeSelect.value = 'dwg';
+                        // Trigger the change event to properly initialize the display
+                        unhideTypeSelect.dispatchEvent(new Event('change'));
+                        // Highlight the current selection in the dwg list
+                        highlightSelectedDwgItem('unhide', item.cmdName);
+                        console.log(`[EDIT] Unhide insertDwg item with cmdName ${item.cmdName} - dwg list interface will be shown`);
+                    } else {
+                        unhideTypeSelect.value = 'cmd';
+                        // Trigger the change event to properly initialize the display
+                        unhideTypeSelect.dispatchEvent(new Event('change'));
+                        // Highlight the current selection in the command list
+                        highlightSelectedCommandItem('unhide', item.cmdName);
+                        console.log(`[EDIT] Unhide touchZone item with cmdName ${item.cmdName} - command list interface will be shown`);
+                    }
                 }
                 break;
                 
             case 'erase':
                 const eraseTypeSelect = document.getElementById('erase-type');
-                const eraseIdxInput = document.getElementById('erase-idx');
                 const eraseCmdInput = document.getElementById('erase-cmd');
-                if (item.idx !== undefined) {
+                if (item.idxName !== undefined) {
                     eraseTypeSelect.value = 'idx';
-                    eraseIdxInput.value = item.idx;
-                    toggleEraseInputs();
-                } else if (item.cmd !== undefined) {
-                    eraseTypeSelect.value = 'cmd';
-                    eraseCmdInput.value = item.cmd;
-                    toggleEraseInputs();
+                    // Trigger the change event to properly initialize the display
+                    eraseTypeSelect.dispatchEvent(new Event('change'));
+                    // Highlight the current selection and hide its action button
+                    highlightSelectedItem('erase', item.idxName);
+                    console.log(`[EDIT] Erase item with idx ${item.idx} - list interface will be shown`);
+                } else if (item.cmdName !== undefined) {
+                    // Check if this is an insertDwg item
+                    if (item.drawingName !== undefined) {
+                        eraseTypeSelect.value = 'dwg';
+                        // Trigger the change event to properly initialize the display
+                        eraseTypeSelect.dispatchEvent(new Event('change'));
+                        // Highlight the current selection in the dwg list
+                        highlightSelectedDwgItem('erase', item.cmdName);
+                        console.log(`[EDIT] Erase insertDwg item with cmdName ${item.cmdName} - dwg list interface will be shown`);
+                    } else {
+                        eraseTypeSelect.value = 'cmd';
+                        // Trigger the change event to properly initialize the display
+                        eraseTypeSelect.dispatchEvent(new Event('change'));
+                        // Highlight the current selection in the command list
+                        highlightSelectedCommandItem('erase', item.cmdName);
+                        console.log(`[EDIT] Erase touchZone item with cmdName ${item.cmdName} - command list interface will be shown`);
+                    }
                 }
                 break;
         }
@@ -1251,8 +1387,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // Use colorUtils function to get hex color
             const hexColor = typeof getColorHex === 'function' ? getColorHex(colorValue) : '#000000';
             preview.style.backgroundColor = hexColor;
+            
+            // Get appropriate text color for contrast against background
+            const textColorNumber = typeof getBlackWhite === 'function' ? getBlackWhite(colorValue) : 0;
+            const textHexColor = typeof getColorHex === 'function' ? getColorHex(textColorNumber) : '#000000';
+            numberSpan.style.color = '#000000';
+            //  numberSpan.style.color = textHexColor;
+            
             numberSpan.textContent = `Color ${colorValue}`;
-            console.log(`Updated color picker display for ${inputId}: color ${colorValue} -> ${hexColor}`);
+            console.log(`Updated color picker display for ${inputId}: color ${colorValue} -> ${hexColor}, text color: ${textColorNumber} -> ${textHexColor}`);
         }
     }
 
@@ -1371,8 +1514,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function updatePreview() {
         if (!drawingData) return;
         
-        
         const itemType = itemTypeDropdown.value;
+        
+        // Skip preview update for hide/unhide/erase items in edit mode to prevent overwriting complete items
+        if (isEditMode && (itemType === 'hide' || itemType === 'unhide' || itemType === 'erase')) {
+            console.log(`[EDIT_MODE] Skipping preview update for ${itemType} item in edit mode to preserve existing idx/idxName`);
+            return;
+        }
         let tempItem = {
             type: itemType
         };
@@ -1386,18 +1534,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 
-                // Validate that name is unique
-                if (!isIndexNameUnique(itemIdxName.value.trim())) {
-                    console.error('Index name must be unique');
+                // Validate that name is unique  SKIP THIS TEST SO YOU CAN ADD INDEX AND ITEM
+          //      if (!isIndexNameUnique(itemIdxName.value.trim())) {
+          //          console.error('Index name must be unique');
                     // Add visual feedback for duplicate name
-                    itemIdxName.style.borderColor = 'red';
-                    itemIdxName.title = 'This index name is already in use. Please choose a different name.';
-                    return;
-                } else {
+          //          itemIdxName.style.borderColor = 'red';
+          //          itemIdxName.title = 'This index name is already in use. Please choose a different name.';
+          //          return;
+          //      } else {
                     // Reset visual feedback if name is valid
                     itemIdxName.style.borderColor = '';
                     itemIdxName.title = '';
-                }
+          //      }
                 
                 tempItem.indexed = true;
                 tempItem.idxName = itemIdxName.value.trim();
@@ -1505,7 +1653,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             
             if (!isTouchZoneCommandNameUnique(touchZoneName.value.trim())) {
-                console.error('TouchZone command name must be unique');
+                console.error('touchZone command name must be unique');
                 // Add visual feedback for duplicate command name
                 touchZoneName.style.borderColor = 'red';
                 touchZoneName.style.backgroundColor = '#ffebee';
@@ -1535,12 +1683,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const selectedDrawingName = insertDwgName.value;
             if (!selectedDrawingName) {
                 console.log('No drawing selected for insertion');
+                insertDwgCmdName.value = ''; // Clear cmdName if no drawing selected
                 return; // Don't update preview if no drawing is selected
             }
+            
+            // Automatically update cmdName based on selected drawing
+            const generatedCmdName = generateInsertDwgCommandName(selectedDrawingName);
+            insertDwgCmdName.value = generatedCmdName;
             
             tempItem = {
                 ...tempItem,
                 drawingName: selectedDrawingName,
+                cmdName: generatedCmdName,
                 xOffset: parseFloat(insertDwgXOffset.value || 0),
                 yOffset: parseFloat(insertDwgYOffset.value || 0)
             };
@@ -1610,10 +1764,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 // Validate that name is unique
-                if (!isIndexNameUnique(itemIdxName.value.trim())) {
-                    alert('Index name must be unique. Please choose a different name.');
-                    return;
-                }
+            //    if (!isIndexNameUnique(itemIdxName.value.trim())) {
+            //        alert('Index name must be unique. Please choose a different name.');
+            //        return;
+            //    }
                 
                 newItem.indexed = true;
                 newItem.idxName = itemIdxName.value.trim();
@@ -1743,7 +1897,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Validate command name is unique
             if (!isTouchZoneCommandNameUnique(touchZoneName.value.trim())) {
-                alert('TouchZone command name must be unique. Please choose a different name.');
+                alert('touchZone command name must be unique. Please choose a different name.');
                 return;
             }
             
@@ -1767,9 +1921,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
+            // Auto-generate cmdName based on drawing name
+            const cmdName = generateInsertDwgCommandName(selectedDrawingName);
+            insertDwgCmdName.value = cmdName; // Ensure field is updated
+            
+            if (!isTouchZoneCommandNameUnique(cmdName)) {
+                alert(`Command name "${cmdName}" is already in use. This drawing may already be inserted.`);
+                return;
+            }
+            
             newItem = {
                 ...newItem,
                 drawingName: selectedDrawingName,
+                cmdName: cmdName,
                 xOffset: parseFloat(insertDwgXOffset.value || 0),
                 yOffset: parseFloat(insertDwgYOffset.value || 0)
             };
@@ -1782,6 +1946,14 @@ document.addEventListener('DOMContentLoaded', () => {
             };
         }
         // No additional properties needed for pop
+        
+        // For hide, unhide, and erase items in add mode, don't create the item yet
+        // The item will be created when the user clicks the specific action button from the index list
+        if (!isEditMode && (itemType === 'hide' || itemType === 'unhide' || itemType === 'erase')) {
+            console.log(`${itemType} item selected - waiting for user to select from index list`);
+            alert(`Please select an item from the ${itemType} list below and click the ${itemType.charAt(0).toUpperCase() + itemType.slice(1)} button.`);
+            return;
+        }
         
         console.log('Adding item to drawing:', newItem);
         
@@ -1960,13 +2132,41 @@ document.addEventListener('DOMContentLoaded', () => {
         const typeSelect = document.getElementById('erase-type');
         const idxInput = document.getElementById('erase-idx-input');
         const cmdInput = document.getElementById('erase-cmd-input');
+        const dwgInput = document.getElementById('erase-dwg-input');
+        const itemsList = document.getElementById('erase-items-list');
+        const cmdList = document.getElementById('erase-cmd-list');
+        const dwgList = document.getElementById('erase-dwg-list');
         
         if (typeSelect.value === 'idx') {
             idxInput.style.display = 'block';
             cmdInput.style.display = 'none';
-        } else {
+            if (dwgInput) dwgInput.style.display = 'none';
+            if (itemsList) {
+                itemsList.style.display = 'block';
+                populateIndexLists();
+            }
+            if (cmdList) cmdList.style.display = 'none';
+            if (dwgList) dwgList.style.display = 'none';
+        } else if (typeSelect.value === 'cmd') {
             idxInput.style.display = 'none';
             cmdInput.style.display = 'block';
+            if (dwgInput) dwgInput.style.display = 'none';
+            if (itemsList) itemsList.style.display = 'none';
+            if (cmdList) {
+                cmdList.style.display = 'block';
+                populateTouchZones();
+            }
+            if (dwgList) dwgList.style.display = 'none';
+        } else if (typeSelect.value === 'dwg') {
+            idxInput.style.display = 'none';
+            cmdInput.style.display = 'none';
+            if (dwgInput) dwgInput.style.display = 'block';
+            if (itemsList) itemsList.style.display = 'none';
+            if (cmdList) cmdList.style.display = 'none';
+            if (dwgList) {
+                dwgList.style.display = 'block';
+                populateInsertedDwgs();
+            }
         }
     };
     
@@ -1974,13 +2174,41 @@ document.addEventListener('DOMContentLoaded', () => {
         const typeSelect = document.getElementById('hide-type');
         const idxInput = document.getElementById('hide-idx-input');
         const cmdInput = document.getElementById('hide-cmd-input');
+        const dwgInput = document.getElementById('hide-dwg-input');
+        const itemsList = document.getElementById('hide-items-list');
+        const cmdList = document.getElementById('hide-cmd-list');
+        const dwgList = document.getElementById('hide-dwg-list');
         
         if (typeSelect.value === 'idx') {
             idxInput.style.display = 'block';
             cmdInput.style.display = 'none';
-        } else {
+            if (dwgInput) dwgInput.style.display = 'none';
+            if (itemsList) {
+                itemsList.style.display = 'block';
+                populateIndexLists();
+            }
+            if (cmdList) cmdList.style.display = 'none';
+            if (dwgList) dwgList.style.display = 'none';
+        } else if (typeSelect.value === 'cmd') {
             idxInput.style.display = 'none';
             cmdInput.style.display = 'block';
+            if (dwgInput) dwgInput.style.display = 'none';
+            if (itemsList) itemsList.style.display = 'none';
+            if (cmdList) {
+                cmdList.style.display = 'block';
+                populateTouchZones();
+            }
+            if (dwgList) dwgList.style.display = 'none';
+        } else if (typeSelect.value === 'dwg') {
+            idxInput.style.display = 'none';
+            cmdInput.style.display = 'none';
+            if (dwgInput) dwgInput.style.display = 'block';
+            if (itemsList) itemsList.style.display = 'none';
+            if (cmdList) cmdList.style.display = 'none';
+            if (dwgList) {
+                dwgList.style.display = 'block';
+                populateInsertedDwgs();
+            }
         }
     };
     
@@ -1988,13 +2216,41 @@ document.addEventListener('DOMContentLoaded', () => {
         const typeSelect = document.getElementById('unhide-type');
         const idxInput = document.getElementById('unhide-idx-input');
         const cmdInput = document.getElementById('unhide-cmd-input');
+        const dwgInput = document.getElementById('unhide-dwg-input');
+        const itemsList = document.getElementById('unhide-items-list');
+        const cmdList = document.getElementById('unhide-cmd-list');
+        const dwgList = document.getElementById('unhide-dwg-list');
         
         if (typeSelect.value === 'idx') {
             idxInput.style.display = 'block';
             cmdInput.style.display = 'none';
-        } else {
+            if (dwgInput) dwgInput.style.display = 'none';
+            if (itemsList) {
+                itemsList.style.display = 'block';
+                populateIndexLists();
+            }
+            if (cmdList) cmdList.style.display = 'none';
+            if (dwgList) dwgList.style.display = 'none';
+        } else if (typeSelect.value === 'cmd') {
             idxInput.style.display = 'none';
             cmdInput.style.display = 'block';
+            if (dwgInput) dwgInput.style.display = 'none';
+            if (itemsList) itemsList.style.display = 'none';
+            if (cmdList) {
+                cmdList.style.display = 'block';
+                populateTouchZones();
+            }
+            if (dwgList) dwgList.style.display = 'none';
+        } else if (typeSelect.value === 'dwg') {
+            idxInput.style.display = 'none';
+            cmdInput.style.display = 'none';
+            if (dwgInput) dwgInput.style.display = 'block';
+            if (itemsList) itemsList.style.display = 'none';
+            if (cmdList) cmdList.style.display = 'none';
+            if (dwgList) {
+                dwgList.style.display = 'block';
+                populateInsertedDwgs();
+            }
         }
     };
     
@@ -2148,6 +2404,840 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error(`[AUTO_SAVE_DEBUG] Error exporting drawing "${drawingName}":`, error);
             // Don't show alert here since this is automatic - just log the error
         }
+    }
+    
+    // Function to initialize toggle states for index lists
+    function initializeToggleStates() {
+        // Call each toggle function to set initial visibility based on default selections
+     //   toggleEraseInputs();
+        toggleHideInputs();
+        toggleUnhideInputs();
+    }
+    
+    // Function to populate index lists for hide/unhide/erase operations
+    function populateIndexLists() {
+        if (!drawingData || !drawingData.items) {
+            return;
+        }
+        
+        // Get all indexed items in original drawing order, but filter out:
+        // - index type items (they are invisible)
+        // - temporary items (have __isTemporary flag)
+        // Use Map to handle duplicates - later items with same idxName replace earlier ones
+        // Also process hide/unhide/erase operations during building
+        const indexedItemsMap = new Map();
+        drawingData.items.forEach((item, globalIndex) => {
+            if (item.idxName !== undefined && 
+                item.idxName.trim() !== '' && 
+                item.type !== 'touchActionInput' && 
+                !item.__isTemporary) {
+                
+                // Handle hide/unhide/erase operations
+                if (item.type === 'hide' && item.idxName) {
+                    // Hide operation: update visible state if item exists
+                    if (indexedItemsMap.has(item.idxName)) {
+                        const existingItem = indexedItemsMap.get(item.idxName);
+                        existingItem.item.visible = false;
+                    }
+                } else if (item.type === 'unhide' && item.idxName) {
+                    // Unhide operation: update visible state if item exists
+                    if (indexedItemsMap.has(item.idxName)) {
+                        const existingItem = indexedItemsMap.get(item.idxName);
+                        existingItem.item.visible = true;
+                    }
+                } else if (item.type === 'erase' && item.idxName) {
+                    // Erase operation: remove item from map
+                    indexedItemsMap.delete(item.idxName);
+                } else if (item.type === 'index') {
+                    // Index item: only add if no existing item, ignore if already exists
+                    if (!indexedItemsMap.has(item.idxName)) {
+                        const newItem = {
+                            item: {...item},
+                            globalIndex: globalIndex,
+                            idxName: item.idxName,
+                            idx: item.idx,
+                            visible: true
+                        };
+                        indexedItemsMap.set(item.idxName, newItem);
+                    }
+                } else {
+                    // Regular item: add or replace in map, preserving visibility state
+                    const existingVisible = indexedItemsMap.has(item.idxName) ? 
+                        indexedItemsMap.get(item.idxName).item.visible : item.visible;
+                    
+                    const newItem = {
+                        item: {...item, visible: existingVisible},
+                        globalIndex: globalIndex,
+                        idxName: item.idxName,
+                        idx: item.idx
+                    };
+                    
+                    indexedItemsMap.set(item.idxName, newItem);
+                }
+            }
+        });
+        
+        // Convert Map values back to array, preserving the order of latest occurrences
+        const indexedItems = Array.from(indexedItemsMap.values());
+        
+        // Populate each list
+        populateIndexList('erase-items-list', indexedItems, 'erase');
+        populateIndexList('hide-items-list', indexedItems, 'hide');
+        populateIndexList('unhide-items-list', indexedItems, 'unhide');
+    }
+    
+    // Function to populate a specific index list
+    function populateIndexList(listId, indexedItems, actionType) {
+        const listContainer = document.getElementById(listId);
+        if (!listContainer) return;
+        
+        listContainer.innerHTML = '';
+        
+        if (indexedItems.length === 0) {
+            listContainer.innerHTML = '<div class="no-items">No indexed items found in this drawing</div>';
+            return;
+        }
+        
+        // Add header
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'section-header';
+        headerDiv.textContent = `Available Indexed Items (select item to ${actionType})`;
+        listContainer.appendChild(headerDiv);
+        
+        // Add items
+        indexedItems.forEach((indexedItem) => {
+            const itemElement = createIndexedItemElement(indexedItem, actionType);
+            listContainer.appendChild(itemElement);
+        });
+    }
+    
+    // Function to populate command lists for hide/unhide operations  
+    
+    // Function to populate only touchZones - standalone version
+    function populateTouchZones() {
+        if (!drawingData || !drawingData.items) {
+            return;
+        }
+        
+        // Get touchZone items using Map to handle duplicates - later items with same cmdName replace earlier ones
+        // Also process hide/unhide/erase operations during building
+        const touchZoneItemsMap = new Map();
+        drawingData.items.forEach((item, globalIndex) => {
+            if (item.cmdName !== undefined && 
+                item.cmdName.trim() !== '' && 
+                !item.__isTemporary) {
+                
+                // Handle hide/unhide/erase operations for touchZones
+                if (item.type === 'hide' && item.cmdName) {
+                    // Hide operation: update visible state if touchZone exists
+                    if (touchZoneItemsMap.has(item.cmdName)) {
+                        const existingItem = touchZoneItemsMap.get(item.cmdName);
+                        existingItem.item.visible = false;
+                    }
+                } else if (item.type === 'unhide' && item.cmdName) {
+                    // Unhide operation: update visible state if touchZone exists
+                    if (touchZoneItemsMap.has(item.cmdName)) {
+                        const existingItem = touchZoneItemsMap.get(item.cmdName);
+                        existingItem.item.visible = true;
+                    }
+                } else if (item.type === 'erase' && item.cmdName) {
+                    // Erase operation: remove touchZone from map
+                    touchZoneItemsMap.delete(item.cmdName);
+                } else if (item.type === 'index' && item.cmdName) {
+                    // Index item with cmdName: only add if no existing item, ignore if already exists
+                    if (!touchZoneItemsMap.has(item.cmdName)) {
+                        const newItem = {
+                            item: {...item},
+                            globalIndex: globalIndex,
+                            cmdName: item.cmdName,
+                            cmd: item.cmd,
+                            visible: true
+                        };
+                        touchZoneItemsMap.set(item.cmdName, newItem);
+                    }
+                } else if (item.type === 'touchZone') {
+                    // Regular touchZone item: add or replace in map, preserving visibility state
+                    const existingVisible = touchZoneItemsMap.has(item.cmdName) ? 
+                        touchZoneItemsMap.get(item.cmdName).item.visible : item.visible;
+                    
+                    const newItem = {
+                        item: {...item, visible: existingVisible},
+                        globalIndex: globalIndex,
+                        cmdName: item.cmdName,
+                        cmd: item.cmd
+                    };
+                    
+                    touchZoneItemsMap.set(item.cmdName, newItem);
+                }
+            }
+        });
+        
+        // Convert Map values back to array, preserving the order of latest occurrences
+        const touchZoneItems = Array.from(touchZoneItemsMap.values());
+        
+        // Populate each touchZone list directly
+        populateTouchZoneList('hide-cmd-list', touchZoneItems, 'hide');
+        populateTouchZoneList('unhide-cmd-list', touchZoneItems, 'unhide');
+        populateTouchZoneList('erase-cmd-list', touchZoneItems, 'erase');
+    }
+    
+    // Function to populate a specific touchZone list
+    function populateTouchZoneList(listId, touchZoneItems, actionType) {
+        const listContainer = document.getElementById(listId);
+        if (!listContainer) return;
+        
+        listContainer.innerHTML = '';
+        
+        if (touchZoneItems.length === 0) {
+            listContainer.innerHTML = '<div class="no-items">No touchZones found in this drawing</div>';
+            return;
+        }
+        
+        // Add header
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'section-header';
+        headerDiv.textContent = `Available TouchZones (select item to ${actionType})`;
+        listContainer.appendChild(headerDiv);
+        
+        // Add items
+        touchZoneItems.forEach((touchZoneItem) => {
+            const itemElement = createTouchZoneItemElement(touchZoneItem, actionType);
+            listContainer.appendChild(itemElement);
+        });
+    }
+    
+    // Function to create touchZone item element
+    function createTouchZoneItemElement(touchZoneItem, actionType) {
+        const element = document.createElement('div');
+        element.className = 'item-row';
+        element.dataset.cmdName = touchZoneItem.cmdName; // Store cmdName for highlighting
+        
+        // Command name with proper formatting
+        const cmdDiv = document.createElement('div');
+        cmdDiv.className = 'item-cmd';
+        cmdDiv.innerHTML = `cmdName: <span style="color: blue;">"${touchZoneItem.cmdName}"</span>`;
+        
+        // Item type
+        const typeDiv = document.createElement('div');
+        typeDiv.className = 'item-type';
+        typeDiv.textContent = touchZoneItem.item.type === 'index' ? 'index' : 'touchZone';
+        
+        // Item details with coordinates
+        const detailsDiv = document.createElement('div');
+        detailsDiv.className = 'item-details';
+        const xSize = touchZoneItem.item.xSize || 0;
+        const ySize = touchZoneItem.item.ySize || 0;
+        detailsDiv.textContent = ` at (${xSize}, ${ySize})`;
+        
+        // Action buttons
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'item-actions';
+        
+        // Create show button but only add it if item is not an index type
+        const showBtn = document.createElement('button');
+        showBtn.className = 'btn btn-show';
+        showBtn.textContent = 'Show';
+        showBtn.onmousedown = (e) => {
+            e.preventDefault();
+            hideItemInPreview(touchZoneItem.cmdName, 'cmd', touchZoneItem.item.visible);
+        };
+        showBtn.onmouseup = (e) => {
+            e.preventDefault();
+            restorePreview();
+        };
+        
+        // Check if this is an index item (index items don't get show buttons)
+        const isIndexItem = touchZoneItem.item.type === 'index';
+        
+        // Action button (Hide/Unhide/Erase) or Hidden/Visible text
+        if (actionType === 'hide' && touchZoneItem.item.visible === false) {
+            // Show "Hidden" text instead of Hide button for already hidden items
+            const hiddenText = document.createElement('span');
+            hiddenText.className = 'hidden-status';
+            hiddenText.textContent = 'Hidden';
+            hiddenText.style.color = '#666';
+            hiddenText.style.fontStyle = 'italic';
+            hiddenText.style.fontSize = '12px';
+            if (!isIndexItem) actionsDiv.appendChild(showBtn);
+            actionsDiv.appendChild(hiddenText);
+        } else if (actionType === 'unhide' && touchZoneItem.item.visible !== false) {
+            // Show "Visible" text instead of Unhide button for already visible items
+            const visibleText = document.createElement('span');
+            visibleText.className = 'visible-status';
+            visibleText.textContent = 'Visible';
+            visibleText.style.color = '#666';
+            visibleText.style.fontStyle = 'italic';
+            visibleText.style.fontSize = '12px';
+            if (!isIndexItem) actionsDiv.appendChild(showBtn);
+            actionsDiv.appendChild(visibleText);
+        } else {
+            // Show normal action button
+            const actionBtn = document.createElement('button');
+            actionBtn.className = `btn btn-${actionType}`;
+            actionBtn.textContent = actionType.charAt(0).toUpperCase() + actionType.slice(1);
+            actionBtn.onclick = () => selectCommandItem(touchZoneItem.cmdName, touchZoneItem.cmd, actionType);
+            if (!isIndexItem) actionsDiv.appendChild(showBtn);
+            actionsDiv.appendChild(actionBtn);
+        }
+        
+        element.appendChild(cmdDiv);
+        element.appendChild(typeDiv);
+        element.appendChild(detailsDiv);
+        element.appendChild(actionsDiv);
+        
+        return element;
+    }
+    
+    // Function to populate only inserted drawings - standalone version
+    function populateInsertedDwgs() {
+        if (!drawingData || !drawingData.items) {
+            return;
+        }
+        
+        // Get insertDwg items using Map to handle duplicates - later items with same cmdName replace earlier ones
+        // Also process hide/unhide/erase operations during building
+        const insertDwgItemsMap = new Map();
+        drawingData.items.forEach((item, globalIndex) => {
+            if (item.cmdName !== undefined && 
+                item.cmdName.trim() !== '' && 
+                !item.__isTemporary) {
+                
+                // Handle hide/unhide/erase operations for insertDwgs
+                if (item.type === 'hide' && item.cmdName) {
+                    // Hide operation: update visible state if insertDwg exists
+                    if (insertDwgItemsMap.has(item.cmdName)) {
+                        const existingItem = insertDwgItemsMap.get(item.cmdName);
+                        existingItem.item.visible = false;
+                    }
+                } else if (item.type === 'unhide' && item.cmdName) {
+                    // Unhide operation: update visible state if insertDwg exists
+                    if (insertDwgItemsMap.has(item.cmdName)) {
+                        const existingItem = insertDwgItemsMap.get(item.cmdName);
+                        existingItem.item.visible = true;
+                    }
+                } else if (item.type === 'erase' && item.cmdName) {
+                    // Erase operation: remove insertDwg from map
+                    insertDwgItemsMap.delete(item.cmdName);
+                } else if (item.type === 'insertDwg') {
+                    // Regular insertDwg item: add or replace in map, preserving visibility state
+                    const existingVisible = insertDwgItemsMap.has(item.cmdName) ? 
+                        insertDwgItemsMap.get(item.cmdName).item.visible : item.visible;
+                    
+                    const newItem = {
+                        item: {...item, visible: existingVisible},
+                        globalIndex: globalIndex,
+                        cmdName: item.cmdName,
+                        cmd: item.cmd,
+                        drawingName: item.drawingName
+                    };
+                    
+                    insertDwgItemsMap.set(item.cmdName, newItem);
+                }
+            }
+        });
+        
+        // Convert Map values back to array, preserving the order of latest occurrences
+        const insertDwgItems = Array.from(insertDwgItemsMap.values());
+        
+        // Populate each inserted drawing list directly
+        populateInsertedDwgList('hide-dwg-list', insertDwgItems, 'hide');
+        populateInsertedDwgList('unhide-dwg-list', insertDwgItems, 'unhide');
+        populateInsertedDwgList('erase-dwg-list', insertDwgItems, 'erase');
+    }
+    
+    // Function to populate a specific inserted drawing list
+    function populateInsertedDwgList(listId, insertDwgItems, actionType) {
+        const listContainer = document.getElementById(listId);
+        if (!listContainer) return;
+        
+        listContainer.innerHTML = '';
+        
+        if (insertDwgItems.length === 0) {
+            listContainer.innerHTML = '<div class="no-items">No inserted drawings found in this drawing</div>';
+            return;
+        }
+        
+        // Add header
+        const headerDiv = document.createElement('div');
+        headerDiv.className = 'section-header';
+        headerDiv.textContent = `Available Inserted Drawings (select item to ${actionType})`;
+        listContainer.appendChild(headerDiv);
+        
+        // Add items
+        insertDwgItems.forEach((dwgItem) => {
+            const itemElement = createInsertedDwgItemElement(dwgItem, actionType);
+            listContainer.appendChild(itemElement);
+        });
+    }
+    
+    // Function to create inserted drawing item element
+    function createInsertedDwgItemElement(dwgItem, actionType) {
+        const element = document.createElement('div');
+        element.className = 'item-row';
+        element.dataset.cmdName = dwgItem.cmdName; // Store cmdName for highlighting
+        
+        // Drawing name
+        const nameDiv = document.createElement('div');
+        nameDiv.className = 'item-name';
+        nameDiv.textContent = '';//dwgItem.item.drawingName || 'Unknown Drawing';
+        
+        // Command name with proper formatting
+        const cmdDiv = document.createElement('div');
+        cmdDiv.className = 'item-cmd';
+        cmdDiv.innerHTML = `loadCmd: <span style="color: blue;">${dwgItem.cmdName}</span>`;
+        
+        // Item details with proper formatting
+        const detailsDiv = document.createElement('div');
+        detailsDiv.className = 'item-details';
+        detailsDiv.innerHTML = `<span style="color: blue; font-weight: bold;">insertDwg</span> at (${dwgItem.item.xOffset || 0}, ${dwgItem.item.yOffset || 0})`;
+        
+        // Action buttons
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'item-actions';
+        
+        // Show button
+        const showBtn = document.createElement('button');
+        showBtn.className = 'btn btn-show';
+        showBtn.textContent = 'Show';
+        showBtn.onmousedown = (e) => {
+            e.preventDefault();
+            hideItemInPreview(dwgItem.cmdName, 'cmd', dwgItem.item.visible, dwgItem.drawingName);
+        };
+        showBtn.onmouseup = (e) => {
+            e.preventDefault();
+            restorePreview();
+        };
+        
+        // Action button (Hide/Unhide/Erase) or Hidden/Visible text
+        if (actionType === 'hide' && dwgItem.item.visible === false) {
+            // Show "Hidden" text instead of Hide button for already hidden items
+            const hiddenText = document.createElement('span');
+            hiddenText.className = 'hidden-status';
+            hiddenText.textContent = 'Hidden';
+            hiddenText.style.color = '#666';
+            hiddenText.style.fontStyle = 'italic';
+            hiddenText.style.fontSize = '12px';
+            actionsDiv.appendChild(showBtn);
+            actionsDiv.appendChild(hiddenText);
+        } else if (actionType === 'unhide' && dwgItem.item.visible !== false) {
+            // Show "Visible" text instead of Unhide button for already visible items
+            const visibleText = document.createElement('span');
+            visibleText.className = 'visible-status';
+            visibleText.textContent = 'Visible';
+            visibleText.style.color = '#666';
+            visibleText.style.fontStyle = 'italic';
+            visibleText.style.fontSize = '12px';
+            actionsDiv.appendChild(showBtn);
+            actionsDiv.appendChild(visibleText);
+        } else {
+            // Show normal action button
+            const actionBtn = document.createElement('button');
+            actionBtn.className = `btn btn-${actionType}`;
+            actionBtn.textContent = actionType.charAt(0).toUpperCase() + actionType.slice(1);
+            actionBtn.onclick = () => selectCommandItem(dwgItem.cmdName, dwgItem.cmd, actionType, dwgItem.drawingName);
+            actionsDiv.appendChild(showBtn);
+            actionsDiv.appendChild(actionBtn);
+        }
+        
+        element.appendChild(nameDiv);
+        element.appendChild(cmdDiv);
+        element.appendChild(detailsDiv);
+        element.appendChild(actionsDiv);
+        
+        return element;
+    }
+    
+    
+    // Function to create indexed item element with action buttons
+    function createIndexedItemElement(indexedItem, actionType) {
+        const element = document.createElement('div');
+        element.className = 'item-row';
+        element.dataset.idxName = indexedItem.item.idxName; // Store idxName for highlighting
+        
+        // Item index name (display idxName)
+        const indexDiv = document.createElement('div');
+        indexDiv.className = 'item-index';
+        indexDiv.textContent = indexedItem.item.idxName;
+        
+        // Item type
+        const typeDiv = document.createElement('div');
+        typeDiv.className = 'item-type';
+        typeDiv.textContent = indexedItem.item.type || 'unknown';
+        
+        // Item details
+        const detailsDiv = document.createElement('div');
+        detailsDiv.className = 'item-details';
+        detailsDiv.textContent = getItemDetails(indexedItem.item);
+        
+        // Action buttons
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'item-actions';
+        
+        // Create show button but only add it if item is not an index type
+        const showBtn = document.createElement('button');
+        showBtn.className = 'btn btn-show';
+        showBtn.textContent = 'Show';
+        showBtn.onmousedown = (e) => {
+            e.preventDefault();
+            hideItemInPreview(indexedItem.item.idxName, 'idx', indexedItem.item.visible);
+        };
+        showBtn.onmouseup = (e) => {
+            e.preventDefault();
+            restorePreview();
+        };
+        
+        // Check if this is an index item (index items don't get show buttons)
+        const isIndexItem = indexedItem.item.type === 'index';
+        
+        // Action button (Hide/Unhide/Erase) or Hidden/Visible text
+        if (actionType === 'hide' && indexedItem.item.visible === false) {
+            // Show "Hidden" text instead of Hide button for already hidden items
+            const hiddenText = document.createElement('span');
+            hiddenText.className = 'hidden-status';
+            hiddenText.textContent = 'Hidden';
+            hiddenText.style.color = '#666';
+            hiddenText.style.fontStyle = 'italic';
+            hiddenText.style.fontSize = '12px';
+            if (!isIndexItem) actionsDiv.appendChild(showBtn);
+            actionsDiv.appendChild(hiddenText);
+        } else if (actionType === 'unhide' && indexedItem.item.visible !== false) {
+            // Show "Visible" text instead of Unhide button for already visible items
+            const visibleText = document.createElement('span');
+            visibleText.className = 'visible-status';
+            visibleText.textContent = 'Visible';
+            visibleText.style.color = '#666';
+            visibleText.style.fontStyle = 'italic';
+            visibleText.style.fontSize = '12px';
+            if (!isIndexItem) actionsDiv.appendChild(showBtn);
+            actionsDiv.appendChild(visibleText);
+        } else {
+            // Show normal action button
+            const actionBtn = document.createElement('button');
+            actionBtn.className = `btn btn-${actionType}`;
+            actionBtn.textContent = actionType.charAt(0).toUpperCase() + actionType.slice(1);
+            actionBtn.onclick = () => selectIndexedItem(indexedItem.idx, indexedItem.item.idxName, actionType);
+            if (!isIndexItem) actionsDiv.appendChild(showBtn);
+            actionsDiv.appendChild(actionBtn);
+        }
+        
+        element.appendChild(indexDiv);
+        element.appendChild(typeDiv);
+        element.appendChild(detailsDiv);
+        element.appendChild(actionsDiv);
+        
+        return element;
+    }
+    
+    // Function to get item details for display (reused from existing logic)
+    function getItemDetails(item) {
+        switch (item.type) {
+            case 'line':
+                return `Line: (${item.xSize || 0}, ${item.ySize || 0}) offset (${item.xOffset || 0}, ${item.yOffset || 0})`;
+            case 'rectangle':
+                return `Rectangle: ${item.xSize || 0}x${item.ySize || 0} at (${item.xOffset || 0}, ${item.yOffset || 0})`;
+            case 'circle':
+                return `Circle: radius ${item.radius || 0} at (${item.xOffset || 0}, ${item.yOffset || 0})`;
+            case 'arc':
+                return `Arc: radius ${item.radius || 0}, ${item.start || 0}° to ${(item.start || 0) + (item.angle || 0)}°`;
+            case 'label':
+                return `Label: "${truncateText(item.text)}" at (${item.xOffset || 0}, ${item.yOffset || 0})`;
+            case 'value':
+                return `Value: "${truncateText(item.text)}" = ${item.intValue || 0}`;
+            case 'insertDwg':
+                return `Insert: "${truncateText(item.drawingName, 30)}" at (${item.xOffset || 0}, ${item.yOffset || 0})`;
+            case 'touchZone':
+                return `touchZone: cmdName "${item.cmdName}" at (${item.xOffset || 0}, ${item.yOffset || 0})`;
+            case 'touchAction':
+                return `TouchAction: cmdName "${item.cmdName}" with ${item.action ? item.action.length : 0} actions`;
+            case 'touchActionInput':
+                return `TouchActionInput: cmdName "${item.cmdName}"`;
+            case 'hide':
+                return `Hide: ${item.idxName}`;
+            case 'unhide':
+                return `Unhide: ${item.idxName}`;
+            case 'erase':
+                return `Erase: ${item.idxName}`;
+            default:
+                return `${item.type}: ${JSON.stringify(item).substring(0, 50)}...`;
+        }
+    }
+    
+    // Function to highlight the currently selected item when editing
+    function highlightSelectedItem(actionType, selectedIdxName) {
+        const listContainer = document.getElementById(`${actionType}-items-list`);
+        if (!listContainer) return;
+        
+        // Find all item rows in the list
+        const itemRows = listContainer.querySelectorAll('.item-row');
+        
+        itemRows.forEach(row => {
+            const rowIdxName = row.dataset.idxName;
+            
+            if (rowIdxName === selectedIdxName) {
+                // Highlight this row as currently selected
+                row.style.backgroundColor = '#e6f3ff';
+                row.style.border = '2px solid #0066cc';
+                row.style.borderRadius = '4px';
+                
+                // Hide or disable the action button
+                const actionBtn = row.querySelector(`.btn-${actionType}`);
+                if (actionBtn) {
+                    actionBtn.style.display = 'none';
+                }
+                // Keep the Show button visible (don't hide it)
+                
+                console.log(`[EDIT] Highlighted ${actionType} item idxName ${selectedIdxName} as currently selected`);
+            }
+        });
+    }
+    
+    // Function to handle selection of an indexed item
+    function selectIndexedItem(selectedIdx, selectedIdxName, actionType) {
+        console.log(`Selected ${actionType} for index ${selectedIdx} (${selectedIdxName})`);
+        
+        // Hide the list
+        const listContainer = document.getElementById(`${actionType}-items-list`);
+        if (listContainer) {
+            listContainer.style.display = 'none';
+        }
+        
+        // For hide/unhide/erase items, immediately create and submit the item
+        if (actionType === 'hide' || actionType === 'unhide' || actionType === 'erase') {
+            const newItem = {
+                type: actionType,
+                idx: selectedIdx,
+                idxName: selectedIdxName,
+                indexed: true
+            };
+            
+            console.log(`Creating ${actionType} item:`, newItem);
+            
+            // Submit the item directly
+            if (isEditMode && editIndex !== null) {
+                // Edit mode: update the existing item  
+                console.log(`Updating item at index ${editIndex}`);
+                updateExistingItem(newItem);
+            } else {
+                // Add mode: add new item
+                console.log('Adding new item');
+                addNewItem(newItem);
+            }
+            return;
+        }
+        
+        // For other item types, use the old logic (populate form)
+        // Set the item type to the action type and populate the form
+        const itemTypeSelect = document.getElementById('item-type');
+        if (itemTypeSelect) {
+            itemTypeSelect.value = actionType;
+            handleItemTypeChange();
+        }
+        
+        // Create a temporary item object with the selected index
+        const tempItem = {
+            type: actionType,
+            idx: selectedIdx,
+            idxName: selectedIdxName
+        };
+        
+        // Populate the form fields
+        populateFormFieldsForItem(tempItem);
+        
+        // Update preview
+        updatePreview();
+    }
+    
+    // Function to create command item element with action buttons
+    
+    // Function to handle selection of a command item
+    function selectCommandItem(selectedCmdName,selectedCmd, actionType, drawingName) {
+        console.log(`Selected ${actionType} for command ${selectedCmdName}`);
+        
+        // Hide the list
+        const listContainer = document.getElementById(`${actionType}-cmd-list`);
+        if (listContainer) {
+            listContainer.style.display = 'none';
+        }
+        
+        // For hide/unhide items, immediately create and submit the item
+        if (actionType === 'hide' || actionType === 'unhide' || actionType === 'erase') {
+            const newItem = {
+                type: actionType,
+                cmd: selectedCmd,
+                cmdName: selectedCmdName,
+                indexed: false
+            };
+            
+            // Add drawingName if available
+            if (drawingName) {
+                newItem.drawingName = drawingName;
+            }
+            
+            console.log(`Creating ${actionType} item:`, newItem);
+            
+            // Submit the item directly
+            if (isEditMode && editIndex !== null) {
+                // Edit mode: update the existing item  
+                console.log(`Updating item at index ${editIndex}`);
+                updateExistingItem(newItem);
+            } else {
+                // Add mode: add new item
+                console.log('Adding new item');
+                addNewItem(newItem);
+            }
+            return;
+        }
+        
+        // For other item types, use the old logic (populate form)
+        const itemTypeSelect = document.getElementById('item-type');
+        if (itemTypeSelect) {
+            itemTypeSelect.value = actionType;
+            handleItemTypeChange();
+        }
+        
+        // Create a temporary item object with the selected command
+        const tempItem = {
+            type: actionType,
+            cmd: selectedCmd,
+            cmdName: selectedCmdName,
+            indexed: false
+        };
+        
+        // Add drawingName if available
+        if (drawingName) {
+            tempItem.drawingName = drawingName;
+        }
+        
+        // Populate the form fields
+        populateFormFieldsForItem(tempItem);
+        
+        // Update preview
+        updatePreview();
+    }
+    
+    // Function to highlight selected command item when editing
+    function highlightSelectedCommandItem(actionType, selectedCmdName) {
+        const listContainer = document.getElementById(`${actionType}-cmd-list`);
+        if (!listContainer) return;
+        
+        // Find all item rows in the list
+        const itemRows = listContainer.querySelectorAll('.item-row');
+        
+        itemRows.forEach(row => {
+            const rowCmdName = row.dataset.cmdName;
+            
+            if (rowCmdName === selectedCmdName) {
+                // Highlight this row as currently selected
+                row.style.backgroundColor = '#e6f3ff';
+                row.style.border = '2px solid #0066cc';
+                row.style.borderRadius = '4px';
+                
+                // Hide or disable the action button
+                const actionBtn = row.querySelector(`.btn-${actionType}`);
+                if (actionBtn) {
+                    actionBtn.style.display = 'none';
+                }
+            }
+        });
+    }
+    
+    function highlightSelectedDwgItem(actionType, selectedCmdName) {
+        const listContainer = document.getElementById(`${actionType}-dwg-list`);
+        if (!listContainer) return;
+        
+        // Find all item rows in the list
+        const itemRows = listContainer.querySelectorAll('.item-row');
+        
+        itemRows.forEach(row => {
+            const rowCmdName = row.dataset.cmdName;
+            
+            if (rowCmdName === selectedCmdName) {
+                // Highlight this row as currently selected
+                row.style.backgroundColor = '#e6f3ff';
+                row.style.border = '2px solid #0066cc';
+                row.style.borderRadius = '4px';
+                
+                // Hide or disable the action button
+                const actionBtn = row.querySelector(`.btn-${actionType}`);
+                if (actionBtn) {
+                    actionBtn.style.display = 'none';
+                }
+                // Keep the Show button visible (don't hide it)
+                
+                console.log(`[EDIT] Highlighted ${actionType} dwg item ${selectedCmdName} as currently selected`);
+            }
+        });
+    }
+    
+    // Function to temporarily hide item using backup/restore approach
+    function hideItemInPreview(itemIdentifier, identifierType = 'idx', isVisible = true, drawingNameForDwg = null) {
+        console.log(`[SHOW_BUTTON] ${isVisible ? 'Hiding' : 'Unhiding'} item ${identifierType === 'cmd' ? 'cmdName' : 'idxName'} ${itemIdentifier} using backup/restore`);
+        
+        // Get the original drawing name (remove _edit_preview suffix if present)
+        const originalDrawingName = drawingName.replace('_edit_preview', '');
+        
+        // Build request body based on identifier type and visibility
+        const requestBody = identifierType === 'cmd' 
+            ? { cmdName: itemIdentifier, isVisible: isVisible }
+            : { idxName: itemIdentifier, isVisible: isVisible };
+        
+        // Include drawingName for dwg items
+        if (drawingNameForDwg) {
+            requestBody.drawingName = drawingNameForDwg;
+        }
+        
+        // Call add-item specific hide endpoint (creates backup and adds hide item)
+        fetch(`/api/drawings/${encodeURIComponent(originalDrawingName)}/add-item-hide`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestBody)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log(`[SHOW_BUTTON] Item hidden with backup created, refreshing iframe`);
+                // Trigger restart in existing iframe to show the change
+                const previewIframe = document.getElementById('preview-iframe');
+                safelyCallInitializeApp(previewIframe);
+            } else {
+                console.error('Error hiding item with backup:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error hiding item with backup:', error);
+        });
+    }
+    
+    // Function to restore original preview from backup
+    function restorePreview() {
+        console.log('[SHOW_BUTTON] Restoring preview from backup');
+        
+        // Get the original drawing name (remove _edit_preview suffix if present)
+        const originalDrawingName = drawingName.replace('_edit_preview', '');
+        
+        // Call add-item specific restore endpoint (restores from backup)
+        fetch(`/api/drawings/${encodeURIComponent(originalDrawingName)}/add-item-restore`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                console.log('[SHOW_BUTTON] Preview restored from backup, refreshing iframe');
+                // Trigger restart in existing iframe to show the change
+                const previewIframe = document.getElementById('preview-iframe');
+                safelyCallInitializeApp(previewIframe);
+            } else {
+                console.error('Error restoring from backup:', data.error);
+            }
+        })
+        .catch(error => {
+            console.error('Error restoring from backup:', error);
+        });
     }
     
 });

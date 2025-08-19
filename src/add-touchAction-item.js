@@ -21,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedIdx = params.get('selectedIdx'); // Index selected from step 1 (for new items)
     const selectedIdxName = params.get('selectedIdxName'); // IdxName selected from step 1 (for new items)
     const selectionMode = params.get('selectionMode'); // 'add' or 'replace' mode from step 1
+    const targetVisible = params.get('targetVisible'); // Target visibility for hide/unhide items in edit mode
     
     if (!drawingName) {
         alert('No drawing specified');
@@ -123,11 +124,10 @@ document.addEventListener('DOMContentLoaded', () => {
             chooseColorBtn.style.backgroundColor = '#007bff';
             blackWhiteBtn.style.backgroundColor = '#6c757d';
             colorPicker.style.display = 'block';
-            // Update color value to currently displayed color when switching to COLOR mode
-            if (drawingData && itemColor) {
-                const currentDisplayedColor = getBlackWhite(drawingData.color);
-                itemColor.value = currentDisplayedColor;
-                updateColorPickerDisplay('item-color', currentDisplayedColor);
+            // Don't override itemColor.value here - it should be set by populateFormFieldsForItem
+            // Only update color picker display if there's already a color value
+            if (itemColor && itemColor.value !== undefined && itemColor.value !== '') {
+                updateColorPickerDisplay('item-color', parseInt(itemColor.value));
             }
         }
     }
@@ -277,6 +277,41 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelBtn.addEventListener('click', cancel);
     
     
+    // Function to filter dropdown Hide/Unhide options based on visibility state
+    function filterHideUnhideOptions(isVisible) {
+        const dropdown = document.getElementById('item-type');
+        if (!dropdown) return;
+        
+        // Get all current options
+        const allOptions = Array.from(dropdown.options);
+        
+        // Remove existing hide/unhide options
+        for (let i = dropdown.options.length - 1; i >= 0; i--) {
+            const option = dropdown.options[i];
+            if (option.value === 'hide' || option.value === 'unhide') {
+                dropdown.removeChild(option);
+            }
+        }
+        
+        // Add appropriate option based on visibility state
+        if (isVisible === false) {
+            // Item is hidden, only show unhide option
+            const unhideOption = document.createElement('option');
+            unhideOption.value = 'unhide';
+            unhideOption.textContent = 'Unhide invisible Item';
+            dropdown.appendChild(unhideOption);
+            console.log('Added unhide option for hidden item');
+        } else {
+            // Item is visible (undefined, true, or any other value), only show hide option  
+            const hideOption = document.createElement('option');
+            hideOption.value = 'hide';
+            hideOption.textContent = 'Hide Item';
+            dropdown.appendChild(hideOption);
+            console.log('Added hide option for visible item');
+        }
+    }
+
+
     // Helper function to generate final text for Label and Value items (same logic as pfodWebMouse)
     function generateItemDisplayText(item) {
         if (item.type === 'label') {
@@ -325,8 +360,7 @@ document.addEventListener('DOMContentLoaded', () => {
      valueIntValue, valueMin, valueMax, valueDisplayMin, valueDisplayMax, valueDecimals, valueUnits,
      circleXOffset, circleYOffset, circleRadius, circleFilled,
      arcXOffset, arcYOffset, arcRadius, arcStart, arcAngle, arcFilled,
-     itemColor, itemIdx,
-     document.getElementById('hide-idx'), document.getElementById('unhide-idx')]
+     itemColor, itemIdx]
     .forEach(input => {
         if (input) {
             input.addEventListener('input', updatePreview);
@@ -616,10 +650,10 @@ document.addEventListener('DOMContentLoaded', () => {
             itemColor.parentElement.style.display = 'none';
             // Hide main idx input for hide - hide uses its own idx input
             itemIdx.parentElement.style.display = 'none';
-            // Set default value for hide idx
-            const hideIdxInput = document.getElementById('hide-idx');
-            if (hideIdxInput && !hideIdxInput.value) {
-                hideIdxInput.value = 1;
+            // Set the fixed target name text
+            const hideTargetName = document.getElementById('hide-target-name');
+            if (hideTargetName) {
+                hideTargetName.textContent = selectedIdxName || 'selected item';
             }
         } else if (itemType === 'unhide') {
             unhideProperties.style.display = 'block';
@@ -627,10 +661,10 @@ document.addEventListener('DOMContentLoaded', () => {
             itemColor.parentElement.style.display = 'none';
             // Hide main idx input for unhide - unhide uses its own idx input
             itemIdx.parentElement.style.display = 'none';
-            // Set default value for unhide idx
-            const unhideIdxInput = document.getElementById('unhide-idx');
-            if (unhideIdxInput && !unhideIdxInput.value) {
-                unhideIdxInput.value = 1;
+            // Set the fixed target name text
+            const unhideTargetName = document.getElementById('unhide-target-name');
+            if (unhideTargetName) {
+                unhideTargetName.textContent = selectedIdxName || 'selected item';
             }
         }
         
@@ -680,6 +714,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     updatePreview();
                 } else {
                     console.log('Skipping auto-post in edit mode - item will be loaded from existing data');
+                    console.log('Setting up temp drawing for touchAction item editing');
+                    setupIframeWithTempDrawing();
                 }
             })
             .catch(error => {
@@ -724,8 +760,21 @@ document.addEventListener('DOMContentLoaded', () => {
             editingItem = touchAction.action[actionIndex];
             console.log('Loaded touchAction action item for editing:', editingItem);
             
-            // Populate the form with the item's values
+            // Populate the form with the item's values first
             populateFormWithItem(editingItem);
+            
+            // If editing a hide/unhide item, filter dropdown AFTER populating form
+            if (editingItem.type === 'hide' || editingItem.type === 'unhide') {
+                if (targetVisible !== null && targetVisible !== undefined) {
+                    const isVisible = targetVisible === 'true' || targetVisible === true;
+                    console.log(`[EDIT_FILTER] targetVisible param: ${targetVisible}, converted isVisible: ${isVisible}`);
+                    filterHideUnhideOptions(isVisible);
+                    // Set the dropdown value after filtering
+                    if (itemTypeDropdown) {
+                        itemTypeDropdown.value = editingItem.type;
+                    }
+                }
+            }
             
             // Update the Add Item button text and page title
             if (addItemBtn) {
@@ -767,14 +816,77 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 
-                // Find the indexed item with matching idx
-                const indexedItem = data.items.find(item => item.idx === lockedIndex);
-                if (!indexedItem) {
-                    console.warn(`No indexed item found with idx=${lockedIndex}`);
+                // Process items to determine current visibility state (same logic as touch-actions.js)
+                const indexedItemsMap = new Map();
+                data.items.forEach((item, globalIndex) => {
+                    if (item.idxName !== undefined && 
+                        item.idxName.trim() !== '' && 
+                        item.type !== 'touchActionInput' && 
+                        item.type !== 'touchAction' &&
+                        !item.__isTemporary) {
+                        
+                        // Handle hide/unhide/erase operations
+                        if (item.type === 'hide' && item.idxName) {
+                            if (indexedItemsMap.has(item.idxName)) {
+                                const existingItem = indexedItemsMap.get(item.idxName);
+                                existingItem.item.visible = false;
+                            }
+                        } else if (item.type === 'unhide' && item.idxName) {
+                            if (indexedItemsMap.has(item.idxName)) {
+                                const existingItem = indexedItemsMap.get(item.idxName);
+                                existingItem.item.visible = true;
+                            }
+                        } else if (item.type === 'erase' && item.idxName) {
+                            indexedItemsMap.delete(item.idxName);
+                        } else if (item.type === 'index') {
+                            if (!indexedItemsMap.has(item.idxName)) {
+                                const newItem = {
+                                    item: {...item},
+                                    globalIndex: globalIndex,
+                                    idxName: item.idxName,
+                                    idx: item.idx
+                                };
+                                indexedItemsMap.set(item.idxName, newItem);
+                            }
+                        } else {
+                            const existingVisible = indexedItemsMap.has(item.idxName) ? 
+                                indexedItemsMap.get(item.idxName).item.visible : item.visible;
+                            
+                            const newItem = {
+                                item: {...item, visible: existingVisible},
+                                globalIndex: globalIndex,
+                                idxName: item.idxName,
+                                idx: item.idx
+                            };
+                            
+                            indexedItemsMap.set(item.idxName, newItem);
+                        }
+                    }
+                });
+                
+                // Get the processed item with final visibility state
+                const processedItem = indexedItemsMap.get(selectedIdxName);
+                if (!processedItem) {
+                    console.warn(`No indexed item found with idxName=${selectedIdxName}`);
                     return;
                 }
+                const indexedItem = processedItem.item;
                 
                 console.log('Found indexed item for replacement:', indexedItem);
+                
+                // Set the default dropdown to the actual item type being replaced first
+                if (itemTypeDropdown && indexedItem.type && itemTypeDropdown.value === 'line') {
+                    // Only set if still at default 'line' value
+                    itemTypeDropdown.value = indexedItem.type;
+                    handleItemTypeChange(); // Trigger the change event to update UI
+                }
+                
+                // Filter dropdown options based on visibility state AFTER setting type
+                filterHideUnhideOptions(indexedItem.visible);
+                // Ensure the correct type is still selected after filtering
+                if (itemTypeDropdown && (indexedItem.type === 'hide' || indexedItem.type === 'unhide')) {
+                    itemTypeDropdown.value = indexedItem.type;
+                }
                 
                 // Determine the replacement item type and values
                 let replacementItem;
@@ -800,6 +912,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 populateFormWithItem(replacementItem);
                 
                 console.log('Initialized form with replacement item:', replacementItem);
+                
+                // Update preview with the replacement item immediately after loading
+                if (!isEditMode) {
+                    console.log('Auto-posting replacement item values for preview');
+                    updatePreview();
+                }
             })
             .catch(error => {
                 console.error('Error loading indexed item for replacement:', error);
@@ -836,8 +954,13 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 // Regular color numbers (0-255) mean Choose Color mode
                 setBlackWhiteMode(false);
-                // Update color picker display
-                updateColorPickerDisplay('item-color', item.color);
+                // Ensure color picker is created before updating display
+                if (typeof createColorPicker !== 'undefined') {
+                    // Update color picker display
+                    updateColorPickerDisplay('item-color', item.color);
+                } else {
+                    console.warn('createColorPicker not available, color picker may not display correctly');
+                }
             }
         } else {
             // Default color for new items
@@ -922,16 +1045,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
                 
             case 'hide':
-                const hideIdxInput = document.getElementById('hide-idx');
-                if (hideIdxInput && item.idx !== undefined) {
-                    hideIdxInput.value = item.idx;
+                const hideTargetName = document.getElementById('hide-target-name');
+                if (hideTargetName && item.idxName) {
+                    hideTargetName.textContent = item.idxName;
                 }
                 break;
                 
             case 'unhide':
-                const unhideIdxInput = document.getElementById('unhide-idx');
-                if (unhideIdxInput && item.idx !== undefined) {
-                    unhideIdxInput.value = item.idx;
+                const unhideTargetName = document.getElementById('unhide-target-name');
+                if (unhideTargetName && item.idxName) {
+                    unhideTargetName.textContent = item.idxName;
                 }
                 break;
                 
@@ -952,8 +1075,15 @@ document.addEventListener('DOMContentLoaded', () => {
             // Use colorUtils function to get hex color
             const hexColor = typeof getColorHex === 'function' ? getColorHex(colorValue) : '#000000';
             preview.style.backgroundColor = hexColor;
+            
+            // Get appropriate text color for contrast against background
+            const textColorNumber = typeof getBlackWhite === 'function' ? getBlackWhite(colorValue) : 0;
+            const textHexColor = typeof getColorHex === 'function' ? getColorHex(textColorNumber) : '#000000';
+            numberSpan.style.color = '#000000';
+            //  numberSpan.style.color = textHexColor;
+            
             numberSpan.textContent = `Color ${colorValue}`;
-            console.log(`Updated color picker display for ${inputId}: color ${colorValue} -> ${hexColor}`);
+            console.log(`Updated color picker display for ${inputId}: color ${colorValue} -> ${hexColor}, text color: ${textColorNumber} -> ${textHexColor}`);
         }
     }
 
@@ -1049,6 +1179,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 tempItem.idx = editingItem.idx;
                 tempItem.idxName = editingItem.idxName;
             }
+        }
+        
+        // Mark hide/unhide items as temporary so they aren't filtered out in preview
+        if (itemType === 'hide' || itemType === 'unhide') {
+            tempItem.temporary = true;
+            tempItem.indexed = true; // Required for hide/unhide items
+            console.log(`[PREVIEW_TEMP] Marked ${itemType} item as temporary for preview`);
         }
         
         // Add color for line, rectangle, label, value, circle, and arc only 
@@ -1184,6 +1321,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         const itemType = itemTypeDropdown.value;
+        console.log(`[ADDITEM_DEBUG] Creating item with type: "${itemType}" (dropdown.value: "${itemTypeDropdown.value}")`);
         let newItem = {
             type: itemType
         };
@@ -1206,15 +1344,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
-        // Handle hide and unhide types with idx parameters
+        // Handle hide and unhide types with fixed selectedIdxName
         if (itemType === 'hide' || itemType === 'unhide') {
-            const idxInput = document.getElementById(`${itemType}-idx`);
-            
-            if (!idxInput.value || parseInt(idxInput.value) < 1) {
-                alert(`${itemType.charAt(0).toUpperCase() + itemType.slice(1)} items must have an index value ≥ 1`);
+            if (!selectedIdxName) {
+                alert(`${itemType.charAt(0).toUpperCase() + itemType.slice(1)} items require a selected target`);
                 return;
             }
-            newItem.idx = parseInt(idxInput.value);
+            // Use the locked index and idxName for hide/unhide operations
+            newItem.idx = lockedIndex;
+            newItem.idxName = selectedIdxName;
+            newItem.indexed = true; // Required for hide/unhide items
+            // Note: Don't add temporary=true for final items, only for preview tempItems
         }
         
         // Add color for line, rectangle, label, value, circle, and arc only 

@@ -23,7 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const viewDrawingBtn = document.getElementById('view-drawing-btn');
     const editDrawingBtn = document.getElementById('edit-drawing-btn');
     const copyDrawingBtn = document.getElementById('copy-drawing-btn');
-   // const saveDrawingBtn = document.getElementById('save-drawing-btn');
+    const saveDrawingBtn = document.getElementById('save-drawing-btn');
     const arduinoExportBtn = document.getElementById('arduino-export-btn');
     const deleteDrawingBtn = document.getElementById('delete-drawing-btn');
     
@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (viewDrawingBtn) viewDrawingBtn.disabled = true;
     if (editDrawingBtn) editDrawingBtn.disabled = true;
     if (copyDrawingBtn) copyDrawingBtn.disabled = true;
-  //  if (saveDrawingBtn) saveDrawingBtn.disabled = true;
+    if (saveDrawingBtn) saveDrawingBtn.disabled = true;
     if (arduinoExportBtn) arduinoExportBtn.disabled = true;
     if (deleteDrawingBtn) deleteDrawingBtn.disabled = true;
     
@@ -180,7 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (viewDrawingBtn) viewDrawingBtn.disabled = true;
         if (editDrawingBtn) editDrawingBtn.disabled = true;
         if (copyDrawingBtn) copyDrawingBtn.disabled = true; 
- //       if (saveDrawingBtn) saveDrawingBtn.disabled = true;
+        if (saveDrawingBtn) saveDrawingBtn.disabled = true;
         if (arduinoExportBtn) arduinoExportBtn.disabled = true;
         if (deleteDrawingBtn) deleteDrawingBtn.disabled = true;
     }
@@ -295,7 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (viewDrawingBtn) viewDrawingBtn.disabled = true;
             if (editDrawingBtn) editDrawingBtn.disabled = true;
             if (copyDrawingBtn) copyDrawingBtn.disabled = true;
-   //         if (saveDrawingBtn) saveDrawingBtn.disabled = true;
+            if (saveDrawingBtn) saveDrawingBtn.disabled = true;
             if (arduinoExportBtn) arduinoExportBtn.disabled = true;
             if (deleteDrawingBtn) deleteDrawingBtn.disabled = true;
         }
@@ -443,7 +443,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
  
-    /**
+    
     saveDrawingBtn.addEventListener('click', async function() {
         if (selectedDrawingName) {
             try {
@@ -470,7 +470,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
-    **/
+    
     arduinoExportBtn.addEventListener('click', async function() {
         if (selectedDrawingName) {
             try {
@@ -536,10 +536,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         try {
             // First, save the drawing as drawing_deleted.json
-            console.log(`Step 1: Saving backup of drawing "${drawingName}" before deletion`);
+            console.log(`Step 1: Saving backup of drawing "${drawingName}" before unloading`);
             
             // Create backup filename
-            const backupFilename = `${drawingName}_deleted.json`;
+            const backupFilename = `${drawingName}_unloaded.json`;
             
             // Fetch the export data first, then trigger download and deletion
             fetch(`/api/drawings/${drawingName}/export?filename=${backupFilename}`)
@@ -567,7 +567,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 })
                 .catch(error => {
                     console.error('Error creating backup before deletion:', error);
-                    alert(`Failed to create backup before deletion: ${error.message}`);
+                    alert(`Failed to create backup before unload: ${error.message}`);
                 });
 /**            
             // Show a success message with button to complete deletion
@@ -698,7 +698,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (viewDrawingBtn) viewDrawingBtn.disabled = false;
                 if (editDrawingBtn) editDrawingBtn.disabled = false;
                 if (copyDrawingBtn) copyDrawingBtn.disabled = false;
-   //             if (saveDrawingBtn) saveDrawingBtn.disabled = false;
+                if (saveDrawingBtn) saveDrawingBtn.disabled = false;
                 if (arduinoExportBtn) arduinoExportBtn.disabled = false;
                 if (deleteDrawingBtn) deleteDrawingBtn.disabled = false;
                 
@@ -706,7 +706,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (viewDrawingBtn) viewDrawingBtn.dataset.drawing = currentSelection;
                 if (editDrawingBtn) editDrawingBtn.dataset.drawing = currentSelection;
                 if (copyDrawingBtn) copyDrawingBtn.dataset.drawing = currentSelection;
-    //            if (saveDrawingBtn) saveDrawingBtn.dataset.drawing = currentSelection;
+                if (saveDrawingBtn) saveDrawingBtn.dataset.drawing = currentSelection;
                 if (arduinoExportBtn) arduinoExportBtn.dataset.drawing = currentSelection;
                 if (deleteDrawingBtn) deleteDrawingBtn.dataset.drawing = currentSelection;
             }
@@ -801,7 +801,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     let drawingData = JSON.parse(event.target.result);
                     
                     // Infer drawing name from filename (remove .json extension and parenthetical numbers)
-                    const drawingName = file.name.replace(/\.json$/i, '').replace(/\s*\(\d+\)$/, '').replace(/_deleted$/i, '');;
+                    const drawingName = file.name.replace(/\.json$/i, '').replace(/\s*\(\d+\)$/, '').replace(/_unloaded$/i, '');;
                     if (!drawingName) {
                         alert('Invalid filename: Cannot determine drawing name');
                         return;
@@ -983,7 +983,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (viewDrawingBtn) viewDrawingBtn.disabled = true;
         if (editDrawingBtn) editDrawingBtn.disabled = true;
         if (copyDrawingBtn) copyDrawingBtn.disabled = true;
-  //      if (saveDrawingBtn) saveDrawingBtn.disabled = true;
+        if (saveDrawingBtn) saveDrawingBtn.disabled = true;
         if (deleteDrawingBtn) deleteDrawingBtn.disabled = true;
         
         fetch('/api/drawings', {
@@ -1034,7 +1034,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (viewDrawingBtn) viewDrawingBtn.disabled = false;
                         if (editDrawingBtn) editDrawingBtn.disabled = false;
                         if (copyDrawingBtn) copyDrawingBtn.disabled = false;
-   //                     if (saveDrawingBtn) saveDrawingBtn.disabled = false;
+                        if (saveDrawingBtn) saveDrawingBtn.disabled = false;
                         if (arduinoExportBtn) arduinoExportBtn.disabled = false;
                         if (deleteDrawingBtn) deleteDrawingBtn.disabled = false;
                         
@@ -1042,7 +1042,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         if (viewDrawingBtn) viewDrawingBtn.dataset.drawing = drawing.name;
                         if (editDrawingBtn) editDrawingBtn.dataset.drawing = drawing.name;
                         if (copyDrawingBtn) copyDrawingBtn.dataset.drawing = drawing.name;
-  //                      if (saveDrawingBtn) saveDrawingBtn.dataset.drawing = drawing.name;
+                        if (saveDrawingBtn) saveDrawingBtn.dataset.drawing = drawing.name;
                         if (deleteDrawingBtn) deleteDrawingBtn.dataset.drawing = drawing.name;
                     }
                     
@@ -1064,7 +1064,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         viewDrawingBtn.disabled = false;
                         editDrawingBtn.disabled = false;
                         copyDrawingBtn.disabled = false;
-   //                     saveDrawingBtn.disabled = false;
+                        saveDrawingBtn.disabled = false;
                         if (arduinoExportBtn) arduinoExportBtn.disabled = false;
                         deleteDrawingBtn.disabled = false;
                         
@@ -1072,7 +1072,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         viewDrawingBtn.dataset.drawing = drawing.name;
                         editDrawingBtn.dataset.drawing = drawing.name;
                         copyDrawingBtn.dataset.drawing = drawing.name;
-   //                     saveDrawingBtn.dataset.drawing = drawing.name;
+                        saveDrawingBtn.dataset.drawing = drawing.name;
                         deleteDrawingBtn.dataset.drawing = drawing.name;
                     });
                     

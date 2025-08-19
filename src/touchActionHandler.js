@@ -158,7 +158,7 @@ function cleanupEmptyTouchActions(data) {
 
 // Accept touchAction edit changes - copy from temporary to original
 // remove touchAction if have empty array
-function acceptTouchActionChanges(req, res, drawings, tempEditDrawings) {
+function acceptTouchActionChanges(req, res, drawings, tempEditDrawings, reorderTouchActionItems) {
     const { tempName } = req.params;
     
     if (!tempEditDrawings[tempName]) {
@@ -266,6 +266,12 @@ function acceptTouchActionChanges(req, res, drawings, tempEditDrawings) {
                     const { __isTemporary, ...newTouchAction } = updatedTouchAction;
                     originalItems.splice(insertIndex, 0, newTouchAction);
                     console.log(`[TOUCHACTION_ACCEPT] Added new touchAction with cmdName "${cmdName}" at index ${insertIndex} with ${newTouchAction.action ? newTouchAction.action.length : 0} action items`);
+                }
+                
+                // Call reorderTouchActionItems to fix any cmd/idx mismatches after main drawing update
+                if (reorderTouchActionItems) {
+                    drawings[originalName].data.items = reorderTouchActionItems(drawings[originalName].data.items, drawings[originalName].data.items, originalName);
+                    console.log(`[TOUCHACTION_ACCEPT] Reordered touch action items for main drawing ${originalName} after accept`);
                 }
                 
                 // Generate new version for original
@@ -715,7 +721,7 @@ function syncTouchActionToPreview(tempDrawingName, tempEditDrawings) {
     
     if (!tempEditDrawings[tempDrawingName] || !tempEditDrawings[previewDrawingName]) {
         console.error(`[TOUCHACTION_SYNC] Missing drawings: edit=${!!tempEditDrawings[tempDrawingName]}, preview=${!!tempEditDrawings[previewDrawingName]}`);
-        return false;
+        return null;
     }
     
     try {
@@ -727,7 +733,7 @@ function syncTouchActionToPreview(tempDrawingName, tempEditDrawings) {
         
         if (!isolatedTouchAction) {
             console.error(`[TOUCHACTION_SYNC] No touchAction found in isolated environment`);
-            return false;
+            return null;
         }
         
         const cmdName = isolatedTouchAction.cmdName;
@@ -741,6 +747,9 @@ function syncTouchActionToPreview(tempDrawingName, tempEditDrawings) {
             // Replace existing touchAction in preview
             previewData.items[previewTouchActionIndex] = JSON.parse(JSON.stringify(isolatedTouchAction));
             console.log(`[TOUCHACTION_SYNC] Updated existing touchAction with cmdName "${cmdName}" in preview`);
+            
+            // Ensure refresh is disabled for preview
+            previewData.refresh = 0;
         } else {
             // Add new touchAction to preview (insert after touchZone with matching cmdName)
             let insertIndex = previewData.items.length; // Default to end
@@ -764,21 +773,24 @@ function syncTouchActionToPreview(tempDrawingName, tempEditDrawings) {
             
             previewData.items.splice(insertIndex, 0, JSON.parse(JSON.stringify(isolatedTouchAction)));
             console.log(`[TOUCHACTION_SYNC] Added new touchAction with cmdName "${cmdName}" to preview at index ${insertIndex}`);
+            
+            // Ensure refresh is disabled for preview
+            previewData.refresh = 0;
         }
         
         // Update preview version
         previewData.version = `V${Date.now()}`;
         
-        return true;
+        return tempEditDrawings[previewDrawingName].data; // Return the preview drawing data that needs reorderTouchActionItems
         
     } catch (error) {
         console.error(`[TOUCHACTION_SYNC] Error syncing touchAction to preview:`, error);
-        return false;
+        return null;
     }
 }
 
 // General sync function for all temp edit to preview operations
-function syncTempEditToPreview(tempName, tempEditDrawings, drawings) {
+function syncTempEditToPreview(tempName, tempEditDrawings, drawings, reorderTouchActionItems) {
     // Handle touchAction item temp drawings
     if (tempName.endsWith('_touchAction_item_edit')) {
         return syncTouchActionItemToPreview(tempName, tempEditDrawings);
@@ -811,12 +823,19 @@ function syncTempEditToPreview(tempName, tempEditDrawings, drawings) {
         if (drawings[originalName]) {
             drawings[originalName].data = JSON.parse(JSON.stringify(drawings[editPreviewName].data));
             console.log(`[SYNC] Synced changes from ${editPreviewName} to ${originalName}`);
+            
+            // Call reorderTouchActionItems on the main drawing after sync to fix any cmd/idx mismatches
+            if (reorderTouchActionItems) {
+                drawings[originalName].data.items = reorderTouchActionItems(drawings[originalName].data.items, drawings[originalName].data.items, originalName);
+                console.log(`[SYNC] Reordered touch action items for main drawing ${originalName} after sync`);
+            }
+            
             // Note: Don't delete edit_preview here - it should persist until user returns to control panel
         }
-        return true;
+        return drawings[editPreviewName].data; // Return the preview drawing data that needs reorderTouchActionItems
     } else {
         console.log(`[SYNC] No sync needed: tempEdit=${!!tempEditDrawings[tempName]}, preview=${!!drawings[editPreviewName]}`);
-        return false;
+        return null;
     }
 }
 
@@ -826,7 +845,7 @@ function syncTouchActionItemToPreview(itemEditDrawingName, tempEditDrawings) {
     
     if (!tempEditDrawings[itemEditDrawingName] || !tempEditDrawings[itemEditPreviewDrawingName]) {
         console.error(`[TOUCHACTION_ITEM_SYNC] Missing drawings: edit=${!!tempEditDrawings[itemEditDrawingName]}, preview=${!!tempEditDrawings[itemEditPreviewDrawingName]}`);
-        return false;
+        return null;
     }
     
     try {
@@ -838,7 +857,7 @@ function syncTouchActionItemToPreview(itemEditDrawingName, tempEditDrawings) {
         
         if (!itemEditTouchAction) {
             console.error(`[TOUCHACTION_ITEM_SYNC] No touchAction found in item edit environment`);
-            return false;
+            return null;
         }
         
         const cmdName = itemEditTouchAction.cmdName;
@@ -861,11 +880,11 @@ function syncTouchActionItemToPreview(itemEditDrawingName, tempEditDrawings) {
         // Update preview version
         itemEditPreviewData.version = `V${Date.now()}`;
         
-        return true;
+        return tempEditDrawings[itemEditPreviewDrawingName].data; // Return the preview drawing data that needs reorderTouchActionItems
         
     } catch (error) {
         console.error(`[TOUCHACTION_ITEM_SYNC] Error syncing touchAction item to preview:`, error);
-        return false;
+        return null;
     }
 }
 
@@ -1161,9 +1180,9 @@ function syncTouchActionToServer(req, res, tempEditDrawings) {
 // Function to temporarily hide an item in preview for touchAction selection
 function hideItemInPreview(req, res, drawings, tempEditDrawings) {
     const { drawingName } = req.params;
-    const { idx } = req.body;
+    const { idxName, isVisible = true } = req.body;
     
-    console.log(`[PREVIEW_HIDE] Request to hide item idx ${idx} in drawing: ${drawingName}`);
+    console.log(`[PREVIEW_HIDE] Request to ${isVisible ? 'hide' : 'unhide'} item idxName ${idxName} in drawing: ${drawingName}`);
     
     if (!drawings[drawingName]) {
         return res.status(404).json({
@@ -1172,10 +1191,10 @@ function hideItemInPreview(req, res, drawings, tempEditDrawings) {
         });
     }
     
-    if (idx === undefined || idx === null) {
+    if (!idxName) {
         return res.status(400).json({
             success: false,
-            error: 'Item idx is required'
+            error: 'Item idxName is required'
         });
     }
     
@@ -1193,18 +1212,36 @@ function hideItemInPreview(req, res, drawings, tempEditDrawings) {
         // Get the existing selection preview drawing
         const selectionDrawing = tempEditDrawings[selectionPreviewName];
         
-        // Remove any existing hide/unhide commands
+        // Remove any existing temporary hide/unhide commands (from previous Show button actions)
         selectionDrawing.data.items = selectionDrawing.data.items.filter(item => 
-            item.type !== 'hide' && item.type !== 'unhide'
+            !((item.type === 'hide' || item.type === 'unhide') && item.temporary)
         );
         
-        // Add the new hide item
-        const hideItem = {
-            type: 'hide',
-            idx: parseInt(idx)
+        // Find the idx for this idxName by looking in the selection preview drawing
+        let idx = null;
+        const targetItem = selectionDrawing.data.items.find(item => item.idxName === idxName && item.indexed);
+        if (targetItem && targetItem.idx !== undefined) {
+            idx = targetItem.idx;
+        }
+        
+        if (idx === null) {
+            return res.status(400).json({
+                success: false,
+                error: `Item with idxName "${idxName}" not found in selection preview`
+            });
+        }
+        
+        // Create appropriate action item based on visibility state
+        const actionType = isVisible ? 'hide' : 'unhide';
+        const actionItem = {
+            type: actionType,
+            idx: parseInt(idx),
+            idxName: idxName,
+            indexed: true,
+            temporary: true  // Flag to identify Show button created items
         };
         
-        selectionDrawing.data.items.push(hideItem);
+        selectionDrawing.data.items.push(actionItem);
         
         // Update version to trigger update mechanism (essential for preventing iframe reinitialization)
         selectionDrawing.data.version = `V${Date.now()}`;
@@ -1212,19 +1249,19 @@ function hideItemInPreview(req, res, drawings, tempEditDrawings) {
         // Mark for update-only responses
         selectionDrawing.isUpdateOnly = true;
         
-        console.log(`[PREVIEW_HIDE] Added hide item for idx ${idx} to selection preview: ${selectionPreviewName}`);
+        console.log(`[PREVIEW_HIDE] Added ${actionType} item for idxName ${idxName} (idx ${idx}) to selection preview: ${selectionPreviewName}`);
         
         res.json({
             success: true,
             previewDrawingName: selectionPreviewName,
-            message: `Temporarily hiding item idx ${idx}`
+            message: `Temporarily ${actionType === 'hide' ? 'hiding' : 'unhiding'} item ${idxName} (idx ${idx})`
         });
         
     } catch (error) {
-        console.error(`[PREVIEW_HIDE] Error hiding item in preview for drawing "${drawingName}":`, error);
+        console.error(`[PREVIEW_HIDE] Error ${isVisible ? 'hiding' : 'unhiding'} item in preview for drawing "${drawingName}":`, error);
         res.status(500).json({
             success: false,
-            error: `Failed to hide item in preview: ${error.message}`
+            error: `Failed to ${isVisible ? 'hide' : 'unhide'} item in preview: ${error.message}`
         });
     }
 }
@@ -1249,9 +1286,9 @@ function restorePreview(req, res, drawings, tempEditDrawings) {
         // Get the existing selection preview drawing
         const selectionDrawing = tempEditDrawings[selectionPreviewName];
         
-        // Remove any hide/unhide commands to restore original view
+        // Remove only temporary hide/unhide commands added by Show button, keep original ones
         selectionDrawing.data.items = selectionDrawing.data.items.filter(item => 
-            item.type !== 'hide' && item.type !== 'unhide'
+            !((item.type === 'hide' || item.type === 'unhide') && item.temporary)
         );
         
         // Update version to trigger update mechanism (essential for preventing iframe reinitialization)
