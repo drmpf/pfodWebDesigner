@@ -16,6 +16,7 @@ const session = require('express-session');
 const translator = require('./server_translator.js');
 const touchActionHandler = require('./touchActionHandler.js');
 const touchActionInputHandler = require('./touchActionInputHandler.js');
+const addItemHideHandler = require('./add-item-hide.js');
 
 // Import JS_VERSION constant from version.js
 const { JS_VERSION } = require('./version.js');
@@ -153,20 +154,37 @@ app.get('/touch-actions.html', (req, res) => {
         console.log(`[TOUCH_ACTIONS_DEBUG] tempEditDrawings[${previewDrawingName}] exists: ${!!tempEditDrawings[previewDrawingName]}`);
         console.log(`[TOUCH_ACTIONS_DEBUG] drawings[${originalDrawing}] exists: ${!!drawings[originalDrawing]}`);
         
-        if (!tempEditDrawings[tempDrawingName] || !tempEditDrawings[previewDrawingName]) {
-            console.log(`Creating touchAction temp drawings: ${tempDrawingName} and ${previewDrawingName}`);
-            
-            // Use the proper touchActionHandler to create the isolated environment
-            const result = touchActionHandler.createTouchActionTempCopy(req, res, drawings, tempEditDrawings);
-            
-            if (!result.success) {
-                return res.status(500).send(`Failed to create touchAction temp drawings: ${result.error}`);
-            }
-            
-            console.log(`Created touchAction temp drawings using touchActionHandler: ${tempDrawingName} and ${previewDrawingName}`);
+        // Check if we're returning from touchAction item editing - if so, preserve existing temp drawings
+        const referer = req.get('Referer') || '';
+        const returningFromItemEdit = referer.includes('add-touchAction-item.html');
+        
+        if (returningFromItemEdit && tempEditDrawings[tempDrawingName] && tempEditDrawings[previewDrawingName]) {
+            console.log(`Returning from touchAction item editing - preserving existing temp drawings with updates`);
+            // Don't recreate temp drawings to preserve touchAction item updates
+            // Skip temp drawing creation and just serve the HTML file
+            return res.sendFile(path.join(__dirname, 'touch-actions.html'));
         } else {
-            console.log(`Using existing touchAction temp drawings: ${tempDrawingName} and ${previewDrawingName}`);
+            // Recreate touchAction temp drawings from current main drawing to ensure up-to-date data
+            if (tempEditDrawings[tempDrawingName]) {
+                console.log(`Removing existing touchAction temp drawing: ${tempDrawingName} (recreating from current main drawing)`);
+                delete tempEditDrawings[tempDrawingName];
+            }
+            if (tempEditDrawings[previewDrawingName]) {
+                console.log(`Removing existing touchAction preview temp drawing: ${previewDrawingName} (recreating from current main drawing)`);
+                delete tempEditDrawings[previewDrawingName];
+            }
         }
+        
+        console.log(`Creating touchAction temp drawings: ${tempDrawingName} and ${previewDrawingName}`);
+        
+        // Use the proper touchActionHandler to create the isolated environment
+        const result = touchActionHandler.createTouchActionTempCopy(req, res, drawings, tempEditDrawings);
+        
+        if (!result.success) {
+            return res.status(500).send(`Failed to create touchAction temp drawings: ${result.error}`);
+        }
+        
+        console.log(`Created touchAction temp drawings using touchActionHandler: ${tempDrawingName} and ${previewDrawingName}`);
     }
     
     // Serve the touch-actions.html file
@@ -457,7 +475,7 @@ app.get('/pfodWebDebug', (req, res) => {
             }
         }
         
-        console.log(`Serving index.html for /pfodWeb with drawing: ${drawingToInject}`);
+        console.log(`Serving index.html for /pfodWebDebug with drawing: ${drawingToInject}`);
         console.log(`[DEBUG] Available drawings: ${Object.keys(drawings).join(', ')}`);
         console.log(`[DEBUG] Available temp drawings: ${Object.keys(tempEditDrawings).join(', ')}`);
         
@@ -727,6 +745,11 @@ function syncEditPreviewToOriginal(editPreviewName) {
         // Deep copy the edit preview data to the original drawing
         drawings[originalName].data = JSON.parse(JSON.stringify(drawings[editPreviewName].data));
         console.log(`[SYNC] Synced changes from ${editPreviewName} to ${originalName}`);
+        
+        // Call updateNumericIndices on the main drawing after sync to fix any cmd/idx mismatches
+        updateNumericIndices(drawings[originalName].data, originalName);
+        console.log(`[SYNC] Updated numeric indices for main drawing ${originalName} after sync`);
+        
         // Note: Don't delete edit_preview here - it should persist until user returns to control panel
     } else {
         console.log(`[SYNC] Warning: Could not sync - missing drawings: preview=${!!drawings[editPreviewName]}, original=${!!drawings[originalName]}`);
@@ -887,6 +910,17 @@ app.post('/api/drawings/:drawingName/preview-restore', (req, res) => {
     return touchActionHandler.restorePreview(req, res, drawings, tempEditDrawings);
 });
 
+// Add-item specific preview hide/restore endpoints
+app.post('/api/drawings/:drawingName/add-item-hide', (req, res) => {
+    console.log(`[REQUEST] POST /api/drawings/:drawingName/add-item-hide - drawingName="${req.params.drawingName}"`);
+    return addItemHideHandler.hideItemInPreview(req, res, drawings, tempEditDrawings);
+});
+
+app.post('/api/drawings/:drawingName/add-item-restore', (req, res) => {
+    console.log(`[REQUEST] POST /api/drawings/:drawingName/add-item-restore - drawingName="${req.params.drawingName}"`);
+    return addItemHideHandler.restorePreview(req, res, drawings, tempEditDrawings);
+});
+
 // API endpoints for drawings
 app.get('/api/drawings', (req, res) => {
     console.log(`[ENDPOINT] GET /api/drawings - No parameters`);
@@ -1022,6 +1056,7 @@ app.get('/api/drawings/:drawingName', (req, res) => {
 // allocatedIdx global used to set unique idx for each dwg to allow for insert dwgs
 // Does not handle inserting a dwg in a dwg.
 // updates cmd based on matching cmdName
+// needs to handle hide/unhide erase by cmdName also
 
 // ONLY call this when something changes, not for touchAction/input exits/previews
 function updateNumericIndices(drawing, drawingName='') {
@@ -1030,86 +1065,204 @@ function updateNumericIndices(drawing, drawingName='') {
       return;
     }
      console.log(`[UPDATE_IDX] Called updateNumericIndices for: ${drawingName}`);
+     console.log(`[UPDATE_IDX_DEBUG] Items array length at start: ${drawing.items.length}`);
 
-    const cmdMap = new Map(); // cmdName to idx number
-     drawing.items.forEach((item) => {
-        if (item.type == 'touchZone') {
-          let cmd = cmdMap.get(item.cmdName);
-          if (cmd !== undefined) {
-            console.error(`[UPDATE_IDX] duplicate touchZone cmdName:${cmdName}`);
-           // delete following touchAction and touchZones
-          } else {
-            item.cmd = 'cmd_c' + allocatedCmdIdx;
-            allocatedCmdIdx += 1;
-            cmdMap.set(item.cmdName,item.cmd);
-          }
-        } else if (item.type == 'touchActionInput') {
-          let cmd = cmdMap.get(item.cmdName);
-          if (cmd == undefined) {
-            console.error(`[UPDATE_IDX] no touchZone for touchActionInput cmdName:${item.cmdName}`);
-          } else {
-            item.cmd = cmd;
-          }
-        } else if (item.type == 'touchAction') {
-          let cmd = cmdMap.get(item.cmdName);
-          if (cmd == undefined) {
-            console.error(`[UPDATE_IDX] no touchZone for touchAction cmdName:${item.cmdName}`);
-          } else {
-            item.cmd = cmd;
-          }
-        }          
+    const cmdMap = new Map(); // cmdName to cmd value
+    const idxMap = new Map(); // idxName to idx value
+    
+    // First pass: assign cmd values in order to insertDwgs and touchZones on first appearance
+    drawing.items.forEach((item) => {
+        if (item.type == 'insertDwg') {
+            // insertDwgs get cmd assignments - check cmdName first, then drawingName
+            if (item.cmdName) {
+                // Use cmdName for cmd mapping (allows sharing cmd with touchZones/hide items)
+                if (!cmdMap.has(item.cmdName)) {
+                    const newCmd = 'cmd_c' + allocatedCmdIdx;
+                    allocatedCmdIdx += 1;
+                    cmdMap.set(item.cmdName, newCmd);
+                    item.cmd = newCmd;
+                    console.log(`[UPDATE_IDX] Assigned ${newCmd} to insertDwg cmdName ${item.cmdName}`);
+                } else {
+                    item.cmd = cmdMap.get(item.cmdName);
+                    console.log(`[UPDATE_IDX] Reused ${item.cmd} for insertDwg cmdName ${item.cmdName}`);
+                }
+/**                
+            } else if (item.drawingName) {
+                // Fallback to drawingName for cmd mapping
+                if (!cmdMap.has(item.drawingName)) {
+                    const newCmd = 'cmd_c' + allocatedCmdIdx;
+                    allocatedCmdIdx += 1;
+                    cmdMap.set(item.drawingName, newCmd);
+                    item.cmd = newCmd;
+                    console.log(`[UPDATE_IDX] Assigned ${newCmd} to insertDwg ${item.drawingName}`);
+                } else {
+                    item.cmd = cmdMap.get(item.drawingName);
+                }
+**/                
+            }
+        } else if (item.type == 'touchZone' && item.cmdName) {
+            // touchZones get cmd assignments based on cmdName
+            if (!cmdMap.has(item.cmdName)) {
+                const newCmd = 'cmd_c' + allocatedCmdIdx;
+                allocatedCmdIdx += 1;
+                cmdMap.set(item.cmdName, newCmd);
+                item.cmd = newCmd;
+                console.log(`[UPDATE_IDX] Assigned ${newCmd} to touchZone cmdName ${item.cmdName}`);
+            } else {
+                item.cmd = cmdMap.get(item.cmdName);
+            }
+        } else if (item.type == 'hide' || item.type == 'unhide' || item.type == 'erase') {
+            if (item.cmdName) {
+              if (!cmdMap.has(item.cmdName)) {
+                const newCmd = 'cmd_c' + allocatedCmdIdx;
+                allocatedCmdIdx += 1;
+                cmdMap.set(item.cmdName, newCmd);
+                item.cmd = newCmd;
+                console.log(`[UPDATE_IDX] Assigned ${newCmd} to ${item.type} cmdName ${item.cmdName}`);
+              } else {
+                item.cmd = cmdMap.get(item.cmdName);
+              }
+            } else if (item.idxName) {
+              if (!idxMap.has(item.idxName)) {
+                const newIdx = allocatedIdx;
+                allocatedIdx += 1;
+                idxMap.set(item.idxName, newIdx);
+                item.idx = newIdx;
+                console.log(`[UPDATE_IDX] Assigned idx ${newIdx} to ${item.type} idxName ${item.idxName}`);
+              } else {
+                item.idx = idxMap.get(item.idxName);
+              }
+           }              
+        } else if (item.indexed && item.idxName) {
+            // indexed items get idx assignments based on idxName
+            if (item.idxName == null || item.idxName == undefined) {
+                item.idxName = `missingIndexName_${item.dx}`;
+            }
+            if (!idxMap.has(item.idxName)) {
+                const newIdx = allocatedIdx;
+                allocatedIdx += 1;
+                idxMap.set(item.idxName, newIdx);
+                item.idx = newIdx;
+                console.log(`[UPDATE_IDX] Assigned idx ${newIdx} to indexed item idxName ${item.idxName}`);
+            } else {
+                item.idx = idxMap.get(item.idxName);
+            }
+        } else if (item.cmdName) {
+           if (!cmdMap.has(item.cmdName)) {
+               const newCmd = 'cmd_c' + allocatedCmdIdx;
+               allocatedCmdIdx += 1;
+               cmdMap.set(item.cmdName, newCmd);
+               item.cmd = newCmd;
+               console.log(`[UPDATE_IDX] Assigned ${newCmd} to ${item.type} cmdName ${item.cmdName}`);
+            } else {
+               item.cmd = cmdMap.get(item.cmdName);
+            }
+        }
+        // Skip touchAction and touchActionInput during idx assignment - they only reference existing indexed items
     });
+    
+    // Second pass: update touchAction/touchActionInput references to assigned cmd values
+    const cmdItemsToRemove = [];
+    drawing.items.forEach((item, index) => {
+        if (item.type == 'touchActionInput' && item.cmdName) {
+            let cmd = cmdMap.get(item.cmdName);
+            if (cmd == undefined) {
+                console.error(`[UPDATE_IDX] touchActionInput references non-existent cmdName ${item.cmdName} - marking for removal`);
+                cmdItemsToRemove.push(index);
+            } else {
+                item.cmd = cmd;
+                console.log(`[UPDATE_IDX] Updated touchActionInput cmdName ${item.cmdName} to cmd ${cmd}`);
+            }
+        } else if (item.type == 'touchAction' && item.cmdName) {
+            let cmd = cmdMap.get(item.cmdName);
+            if (cmd == undefined) {
+                console.error(`[UPDATE_IDX] touchAction references non-existent cmdName ${item.cmdName} - marking for removal`);
+                cmdItemsToRemove.push(index);
+            } else {
+                item.cmd = cmd;
+                console.log(`[UPDATE_IDX] Updated touchAction cmdName ${item.cmdName} to cmd ${cmd}`);
+            }
+/**            
+        } else if (item.type == 'hide' || item.type == 'unhide' || item.type == 'erase') {
+            let cmd = cmdMap.get(item.cmdName);
+            item.cmd = cmd;
+            console.log(`[UPDATE_IDX] Updated ${item.type} cmdName ${item.cmdName} to cmd ${cmd}`);
+        } else if (item.type == 'index' && item.cmdName) {
+            let cmd = cmdMap.get(item.cmdName);
+            item.cmd = cmd;
+            console.log(`[UPDATE_IDX] Updated ${item.type} cmdName ${item.cmdName} to cmd ${cmd}`);
+**/            
+        }         
+    });
+    
+    // Remove invalid touchAction/touchActionInput items with bad cmdName (in reverse order to preserve indices)
+    for (let i = cmdItemsToRemove.length - 1; i >= 0; i--) {
+        const removedItem = drawing.items.splice(cmdItemsToRemove[i], 1)[0];
+        console.log(`[UPDATE_IDX] Removed invalid item: ${removedItem.type} (had invalid cmdName ${removedItem.cmdName})`);
+    }
+    
+    // Third pass: update touchActionInput and touchAction items' idx references
+    const itemsToRemove = [];
+    drawing.items.forEach((item, index) => {
+        if (item.type === 'touchActionInput' && item.idxName) {
+            let idx = idxMap.get(item.idxName);
+            if (idx !== undefined) {
+                item.textIdx = idx;
+                console.log(`[UPDATE_IDX] Updated touchActionInput idxName ${item.idxName} to textIdx ${idx}`);
+            } else {
+                console.error(`[UPDATE_IDX] touchActionInput references non-existent idxName ${item.idxName} - Clear idx reference`);
+                delete item.textIdx;
+                delete item.idxName;
+            }
+        } else if (item.type === 'touchAction' && item.action && Array.isArray(item.action)) {
+            // Update idx for each action item in the touchAction's action array
+            const invalidActionItems = [];
+            item.action.forEach((actionItem, actionIndex) => {
+                if (actionItem.idxName) {
+                    let idx = idxMap.get(actionItem.idxName);
+                    if (idx !== undefined) {
+                        actionItem.idx = idx;
+                        console.log(`[UPDATE_IDX] Updated touchAction actionItem idxName ${actionItem.idxName} to idx ${idx}`);
+                    } else {
+                        console.error(`[UPDATE_IDX] touchAction actionItem references non-existent idxName ${actionItem.idxName}`);
+                        invalidActionItems.push(actionIndex);
+                    }
+                } else if (actionItem.cmdName) {
+                    let cmd = cmdMap.get(actionItem.cmdName);
+                    if (cmd !== undefined) {
+                        actionItem.cmd = cmd;
+                        console.log(`[UPDATE_IDX] Updated touchAction actionItem cmdName ${actionItem.cmdName} to cmd ${cmd}`);
+                    } else {
+                        console.error(`[UPDATE_IDX] touchAction actionItem references non-existent cmdName ${actionItem.cmdName}`);
+                        invalidActionItems.push(actionIndex);
+                    }
+                }
+            });
+            
+            // Remove invalid action items
+            for (let i = invalidActionItems.length - 1; i >= 0; i--) {
+                item.action.splice(invalidActionItems[i], 1);
+            }
+            
+            // If touchAction has no valid action items, mark the entire touchAction for removal
+            if (item.action.length === 0) {
+                console.error(`[UPDATE_IDX] touchAction has no valid action items - marking for removal`);
+                itemsToRemove.push(index);
+            }
+        }
+    });
+    
+    // Remove invalid touchActionInput and touchAction items (in reverse order to preserve indices)
+    for (let i = itemsToRemove.length - 1; i >= 0; i--) {
+        const removedItem = drawing.items.splice(itemsToRemove[i], 1)[0];
+        console.log(`[UPDATE_IDX] Removed invalid item: ${removedItem.type} (had invalid idxName references)`);
+    }
      
     let insertedDwgs = [];
     drawing.items.forEach((item) => {
         if (item.type == 'insertDwg') {
           console.log(`[UPDATE_IDX] Found insertDwg: ${item.drawingName}`);
           insertedDwgs.push(item);
-        }
-    });
-    
-    const idxMap = new Map(); // idxName to idx number
-    drawing.items.forEach((item, index) => {
-        if (item.indexed) {
-            // check for existing idx
-            if (item.idxName == null || item.idxName == undefined) {
-              item.idxName = `missingIndexName_${item.dx}`;
-            }
-            let idx = idxMap.get(item.idxName);
-            if (idx !== undefined) {
-              // already been set up
-              item.idx = idx;
-            } else {
-            // Numeric index is simply the row number (1-based) - use 'idx' for pfodWeb viewer
-              item.idx = allocatedIdx;
-              allocatedIdx += 1;
-              idxMap.set(item.idxName,item.idx);
-            }
-        }
-    });
-    
-    // Update touchActionInput and touchAction items' idx by looking up their idxName in the data array
-    drawing.items.forEach(item => {
-        if (item.type === 'touchActionInput' && item.idxName) {
-            // Find the matching item in the data array by idxName and update textIdx
-            const matchingDataItem = drawing.items.find(dataItem => 
-                dataItem.idxName === item.idxName && dataItem.indexed
-            );
-            if (matchingDataItem && matchingDataItem.idx) {
-                item.textIdx = matchingDataItem.idx;
-            }
-        } else if (item.type === 'touchAction' && item.action && Array.isArray(item.action)) {
-            // Update idx for each action item in the touchAction's action array
-            item.action.forEach(actionItem => {
-                if (actionItem.idxName) {
-                    const matchingDataItem = drawing.items.find(dataItem => 
-                        dataItem.idxName === actionItem.idxName && dataItem.indexed
-                    );
-                    if (matchingDataItem && matchingDataItem.idx) {
-                        actionItem.idx = matchingDataItem.idx;
-                    }
-                }
-            });
         }
     });
     // now process the insertDwgs
@@ -1123,128 +1276,115 @@ function updateNumericIndices(drawing, drawingName='') {
     });
     console.log(`[UPDATE_IDX] Item order after updateNumericIndices:`);
       drawing.items.forEach((item, index) => {
-      console.log(`[UPDATE_IDX]   ${index}: ${item.type}${item.cmdName ? `(cmdName=${item.cmdName})` : '(no_cmdName)'}${item.cmd ? `(cmd=${item.cmd})` : '(no_cmd)'}${item.idxName ? `(idxName=${item.idxName})` : ''}`);
+      console.log(`[UPDATE_IDX]   ${index}: ${item.type}${item.cmdName ? `(cmdName=${item.cmdName})` : '(no_cmdName)'}${item.cmd ? `(cmd=${item.cmd})` : '(no_cmd)'}${item.idxName ? `(idxName=${item.idxName})` : '(no idxName)'}`);
     });
+    console.log(`[UPDATE_IDX_DEBUG] Items array length at end: ${drawing.items.length}`);
 }
+
+// Global variable to track concurrent reorder operations
+let reorderInProgress = null;
 
 // Function to reorder items to place touchAction/touchActionInput after their touchZone based on cmdName
 function reorderTouchActionItems(items, originalItems = [], drawingName = '') {
-    console.log('[REORDER] Reordering items to place touchAction/touchActionInput after their touchZone');
+    if (reorderInProgress) {
+        console.log(`[DEBUG_CONCURRENT] WARNING: Reorder already in progress for "${reorderInProgress}", now starting for "${drawingName}"`);
+    }
+    reorderInProgress = drawingName;
+    console.log(`[REORDER] Reordering touchAction/touchActionInput items to place after their touchZone (drawing: ${drawingName})`);
     
-    const originalTouchZoneCmds = new Set(
-        originalItems.filter(item => item.type === 'touchZone' && item.cmdName).map(item => item.cmdName)
-    );
-    
-    const reorderedItems = [];
-    const pendingItems = [...items];
-    const newTouchZones = [];
-    // new touchZones are ALWAYS added at the end, because exiting items can not be edited to be touchZones
-    // First pass: process ALL original items in their ORIGINAL order 
-    // TouchZones maintain their existing position, touchActions/touchActionInputs get reordered after their touchZone
-    for (const originalItem of originalItems) {
-        if (originalItem.type === 'touchZone' && originalItem.cmdName) {
-            // Find the updated version of this touchZone in pendingItems
-            const updatedTouchZoneIndex = pendingItems.findIndex(item => 
-                item.type === 'touchZone' && item.cmdName === originalItem.cmdName
-            );
-            
-            if (updatedTouchZoneIndex !== -1) {
-                // Found the updated touchZone - add it in its original position
-                const updatedTouchZone = pendingItems[updatedTouchZoneIndex];
-                reorderedItems.push(updatedTouchZone);
-                console.log(`[REORDER] Added existing touchZone with cmdName "${updatedTouchZone.cmdName}" at position ${reorderedItems.length - 1} (preserving original order)`);
-                pendingItems.splice(updatedTouchZoneIndex, 1);
-                
-                // Now find and add associated touchActionInput items (in order)
-                for (let i = pendingItems.length - 1; i >= 0; i--) {
-                    const item = pendingItems[i];
-                    if (item.type === 'touchActionInput' && item.cmdName === originalItem.cmdName) {
-                        reorderedItems.push(item);
-                        console.log(`[REORDER] Added touchActionInput with cmdName "${originalItem.cmdName}" at position ${reorderedItems.length - 1}`);
-                        pendingItems.splice(i, 1);
-                    }
-                }
-                
-                // Now find and add associated touchAction items (in order)
-                for (let i = pendingItems.length - 1; i >= 0; i--) {
-                    const item = pendingItems[i];
-                    if (item.type === 'touchAction' && item.cmdName === originalItem.cmdName) {
-                        reorderedItems.push(item);
-                        console.log(`[REORDER] Added touchAction with cmdName "${originalItem.cmdName}" at position ${reorderedItems.length - 1}`);
-                        pendingItems.splice(i, 1);
-                    }
-                }
-            }
+    // Log initial state
+    console.log(`[DEBUG_REORDER_INITIAL] Starting with ${items.length} items:`);
+    items.forEach((item, idx) => {
+        if (item.type === 'touchActionInput') {
+            console.log(`[DEBUG_REORDER_INITIAL]   ${idx}: ${item.type}(cmdName=${item.cmdName})(cmd=${item.cmd}) *** TOUCHACTIONINPUT`);
         } else {
-            // This is a non-touchZone item from the original drawing
-            // Find its updated version (or exact match if not updated)
-            const updatedItemIndex = pendingItems.findIndex(item => {
-                // For items with idx property, match on idx
-                if (originalItem.idx !== undefined && item.idx !== undefined) {
-                    return item.idx === originalItem.idx && item.type === originalItem.type;
-                } else {
-                    return item.type === originalItem.type && 
-                           item.type !== 'touchActionInput' && 
-                           item.type !== 'touchAction'; // Don't match these as they'll be handled with their touchZone
-                }
-            });
-            
-            if (updatedItemIndex !== -1) {
-                // Found the updated item - add it in its original position
-                const updatedItem = pendingItems[updatedItemIndex];
-                reorderedItems.push(updatedItem);
-                console.log(`[REORDER] Added existing ${updatedItem.type} at position ${reorderedItems.length - 1} (preserving original order)`);
-                pendingItems.splice(updatedItemIndex, 1);
+            console.log(`[DEBUG_REORDER_INITIAL]   ${idx}: ${item.type}${item.cmdName ? `(cmdName=${item.cmdName})` : `('')`}${item.cmd ? `(cmd=${item.cmd})` : `('')`}${item.idxName ? `(idxName=${item.idxName})` : `('')`}`);
+        }
+    });
+    
+    // Step 1: Extract touchActions and touchActionInputs, leave all other items in original order
+    const reorderedItems = [];
+    const extractedTouchActions = [];
+    const extractedTouchActionInputs = [];
+    
+    for (const item of items) {
+        if (item.type === 'touchAction') {
+            extractedTouchActions.push(item);
+            console.log(`[REORDER] Extracted touchAction with cmdName "${item.cmdName}"`);
+        } else if (item.type === 'touchActionInput') {
+            extractedTouchActionInputs.push(item);
+            console.log(`[REORDER] Extracted touchActionInput with cmdName "${item.cmdName}"`);
+        } else {
+            // Keep all other items in their original order
+            reorderedItems.push(item);
+            console.log(`[REORDER] Added ${item.type} at position ${reorderedItems.length - 1} (preserving original order)`);
+        }
+    }
+    
+    // Step 2: For each extracted touchActionInput, find matching touchZone and insert after it
+    for (const touchActionInput of extractedTouchActionInputs) {
+        if (!touchActionInput.cmdName) {
+            console.log(`[REORDER] ERROR: touchActionInput has no cmdName, omitting item`);
+            continue;
+        }
+        
+        // Find the touchZone with matching cmdName
+        let insertIndex = -1;
+        for (let i = 0; i < reorderedItems.length; i++) {
+            if (reorderedItems[i].type === 'touchZone' && reorderedItems[i].cmdName === touchActionInput.cmdName) {
+                insertIndex = i + 1; // Insert after the touchZone
+                break;
             }
         }
-    }
-    
-    // Collect new touchZones (those not in the original drawing)
-    for (let i = pendingItems.length - 1; i >= 0; i--) {
-        const item = pendingItems[i];
-        if (item.type === 'touchZone' && item.cmdName && !originalTouchZoneCmds.has(item.cmdName)) {
-            // This is a new touchZone - save it for adding at the end
-            newTouchZones.push(item);
-            console.log(`[REORDER] Found new touchZone with cmdName "${item.cmdName}" - will add at end`);
-            pendingItems.splice(i, 1);
-        }
-    }
         
-    // Second pass: add all non-touchZone items (excluding those already added)
-    const nonTouchItems = pendingItems.filter(item => 
-        item.type !== 'touchZone' && 
-        item.type !== 'touchAction' && 
-        item.type !== 'touchActionInput'
-    );
-    reorderedItems.push(...nonTouchItems);
-    
-    // Third pass: add new touchZones at the end, along with their associated items
-    for (const newTouchZone of newTouchZones) {
-        reorderedItems.push(newTouchZone);
-        console.log(`[REORDER] Added new touchZone with cmdName "${newTouchZone.cmdName}" at position ${reorderedItems.length - 1}`);
-        
-        // Find and add associated touchActionInput from remaining pending items
-        const touchActionInput = pendingItems.find(item => 
-            item.type === 'touchActionInput' && item.cmdName === newTouchZone.cmdName
-        );
-        if (touchActionInput) {
-            reorderedItems.push(touchActionInput);
-            console.log(`[REORDER] Added touchActionInput with cmdName "${newTouchZone.cmdName}" at position ${reorderedItems.length - 1}`);
-        }
-        
-        // Find and add associated touchAction from remaining pending items
-        const touchAction = pendingItems.find(item => 
-            item.type === 'touchAction' && item.cmdName === newTouchZone.cmdName
-        );
-        if (touchAction) {
-            reorderedItems.push(touchAction);
-            console.log(`[REORDER] Added touchAction with cmdName "${newTouchZone.cmdName}" at position ${reorderedItems.length - 1}`);
+        if (insertIndex !== -1) {
+            reorderedItems.splice(insertIndex, 0, touchActionInput);
+            console.log(`[REORDER] Added touchActionInput with cmdName "${touchActionInput.cmdName}" at position ${insertIndex}`);
+        } else {
+            console.log(`[REORDER] ERROR: No touchZone found with cmdName "${touchActionInput.cmdName}", omitting touchActionInput`);
         }
     }
     
-    updateNumericIndices(reorderedItems,drawingName);
+    // Step 3: For each extracted touchAction, find matching touchZone and insert after it (and after any touchActionInput)
+    for (const touchAction of extractedTouchActions) {
+        if (!touchAction.cmdName) {
+            console.log(`[REORDER] ERROR: touchAction has no cmdName, omitting item`);
+            continue;
+        }
+        
+        // Find the touchZone with matching cmdName and insert after it (and any touchActionInputs)
+        let insertIndex = -1;
+        for (let i = 0; i < reorderedItems.length; i++) {
+            if (reorderedItems[i].type === 'touchZone' && reorderedItems[i].cmdName === touchAction.cmdName) {
+                insertIndex = i + 1;
+                // Skip past any touchActionInputs with same cmdName
+                while (insertIndex < reorderedItems.length && 
+                       reorderedItems[insertIndex].type === 'touchActionInput' && 
+                       reorderedItems[insertIndex].cmdName === touchAction.cmdName) {
+                    insertIndex++;
+                }
+                break;
+            }
+        }
+        
+        if (insertIndex !== -1) {
+            reorderedItems.splice(insertIndex, 0, touchAction);
+            console.log(`[REORDER] Added touchAction with cmdName "${touchAction.cmdName}" at position ${insertIndex}`);
+        } else {
+            console.log(`[REORDER] ERROR: No touchZone found with cmdName "${touchAction.cmdName}", omitting touchAction`);
+        }
+    }
+    
+    updateNumericIndices({items: reorderedItems}, drawingName);
 
     console.log(`[REORDER] Final item order: ${reorderedItems.map(item => `${item.type}${item.cmdName ? `(${item.cmdName})` : ''}`).join(', ')}`);
+    console.log(`[REORDER] Final items list has ${reorderedItems.length} items:`);
+    reorderedItems.forEach((item, idx) => {
+        console.log(`[REORDER]   ${idx}: ${item.type}${item.cmdName ? `(cmdName=${item.cmdName})` : `(no_cmdName)`}${item.cmd ? `(cmd=${item.cmd})` : `(no_cmd)`}${item.idxName ? `(idxName=${item.idxName})` : `(no_idxName)`}${item.idx ? `(idx=${item.idx})` : `(no_idx)`}`);
+    });
+    
+    // Clear the reorder in progress flag
+    reorderInProgress = null;
     return reorderedItems;
 }
 
@@ -1262,7 +1402,39 @@ app.get('/api/drawings/:drawingName/data', (req, res) => {
         return res.status(404).json({ error: `Drawing "${drawingName}" not found` });
     }
     
-    // Return full drawing data including name property
+    // Filter out incomplete hide/unhide/erase items permanently from the stored drawing
+    if (drawing && drawing.items) {
+        const originalLength = drawing.items.length;
+        drawing.items = drawing.items.filter(item => {
+            // For hide/unhide items, only keep if they have either (idx AND idxName) OR (cmd AND cmdName)
+            if (item.type === 'hide' || item.type === 'unhide') {
+                const hasIndexFields = item.idx && item.idxName;
+                const hasCmdFields = item.cmd && item.cmdName;
+                if (!hasIndexFields && !hasCmdFields) {
+                    console.log(`[FILTER_PERMANENT] Permanently removing incomplete ${item.type} item with neither idx/idxName nor cmd/cmdName:`, JSON.stringify(item));
+                    return false;
+                }
+            }
+            
+            // For erase items, only keep if they have either (idx AND idxName) OR (cmd AND cmdName)
+            if (item.type === 'erase') {
+                const hasIndexFields = item.idx && item.idxName;
+                const hasCmdFields = item.cmd && item.cmdName;
+                if (!hasIndexFields && !hasCmdFields) {
+                    console.log(`[FILTER_PERMANENT] Permanently removing incomplete erase item with neither idx/idxName nor cmd/cmdName:`, JSON.stringify(item));
+                    return false;
+                }
+            }
+            
+            return true;
+        });
+        
+        if (drawing.items.length !== originalLength) {
+            console.log(`[FILTER_PERMANENT] Removed ${originalLength - drawing.items.length} incomplete items from drawing "${drawingName}"`);
+        }
+    }
+    
+    // Return filtered drawing data including name property
     // Client-side will update numeric indices when displaying the data
     res.json(drawing);
 });
@@ -1756,6 +1928,43 @@ function handleDrawingRequest(req, res, drawingName, ver, mode) {
         // Check both the request mode parameter and the stored drawing mode
         const effectiveMode = mode || drawingData.mode;
         console.log(`[DEBUG_MODE] Drawing: ${drawingName}, requestMode: ${mode}, storedMode: ${drawingData.mode}, effectiveMode: ${effectiveMode}`);
+        
+        // Debug: show what items are in the drawing before filtering
+        if (responseData.items) {
+            const touchActionInputCount = responseData.items.filter(item => item.type === 'touchActionInput').length;
+            console.log(`[DEBUG_RESPONSE] Drawing "${drawingName}" has ${responseData.items.length} total items, ${touchActionInputCount} touchActionInput items before filtering`);
+        }
+
+        // Filter out incomplete hide/unhide/erase items only, or ALL hide/unhide/erase items for selection_preview
+        if (responseData.items) {
+            const originalItemCount = responseData.items.length;
+            responseData.items = responseData.items.filter(item => {
+                // For selection_preview drawings, keep hide/unhide/erase items so drawingDataProcessor can process them properly
+                // (Client already filters out touchActionInputs)
+                
+                // For non-selection_preview drawings, only filter incomplete hide/unhide items
+                if (item.type === 'hide' || item.type === 'unhide') {
+                    if ((!item.idx || !item.idxName) && (!item.cmd || !item.cmdName)) {
+                        console.log(`[FILTER] Removing incomplete ${item.type} item without idx or idxName:`, JSON.stringify(item));
+                        return false;
+                    }
+                }
+                
+                // For erase items, only keep if they have idx or cmd (complete items)
+                if (item.type === 'erase') {
+                    if ((!item.idx || !item.idxName) && (!item.cmd || !item.cmdName)) {
+                        console.log(`[FILTER] Removing incomplete erase item without idx or cmd:`, JSON.stringify(item));
+                        return false;
+                    }
+                }
+                
+                return true;
+            });
+            const filteredItemCount = responseData.items.length;
+            if (originalItemCount !== filteredItemCount) {
+                console.log(`[FILTER] Filtered out ${originalItemCount - filteredItemCount} incomplete command items`);
+            }
+        }
         if ((effectiveMode === 'touchAction' || effectiveMode === 'touchActionItemPreview') && responseData.items) {
             const originalItemCount = responseData.items.length;
             responseData.items = responseData.items.filter(item => item.type !== 'touchActionInput');
@@ -2175,17 +2384,17 @@ app.delete('/api/drawings/:drawingName/delete', (req, res) => {
         // Delete the drawing
         delete drawings[drawingName];
         
-        console.log(`Drawing "${drawingName}" deleted`);
+        console.log(`Drawing "${drawingName}" unloaded`);
         
         res.json({ 
             success: true, 
-            message: `Drawing "${drawingName}" deleted successfully` 
+            message: `Drawing "${drawingName}" unloaded successfully` 
         });
     } catch (error) {
-        console.error(`Error deleting drawing "${drawingName}":`, error);
+        console.error(`Error unloading drawing "${drawingName}":`, error);
         res.status(500).json({ 
             success: false, 
-            error: `Failed to delete drawing: ${error.message}` 
+            error: `Failed to unload drawing: ${error.message}` 
         });
     }
 });
@@ -2217,19 +2426,41 @@ app.post('/api/drawings/:drawingName/temp-copy', (req, res) => {
         // Create temporary name for non-touchAction mode
         const tempName = `${drawingName}_edit_preview`;
         
-        // Check if temporary drawing already exists
+        // Always recreate temp drawing from current main drawing to ensure up-to-date data
         if (tempEditDrawings[tempName]) {
-            console.log(`Using existing temporary drawing: ${tempName}`);
-            return res.json({ 
-                success: true, 
-                tempName: tempName,
-                message: `Using existing temporary copy: ${tempName}` 
-            });
+            console.log(`Removing existing temporary drawing: ${tempName} (recreating from current main drawing)`);
+            delete tempEditDrawings[tempName];
         }
         
         // Deep copy the original drawing
         const originalData = drawings[drawingName].data;
+        
+        console.log(`[DEBUG_TEMP_COPY_ORIG] Original drawing has ${originalData.items ? originalData.items.length : 0} items:`);
+        console.log(`[DEBUG_TEMP_COPY_ORIG] Full originalData structure:`, JSON.stringify(originalData, null, 2));
+        if (originalData.items) {
+            originalData.items.forEach((item, idx) => {
+                if (item.type === 'touchActionInput') {
+                    console.log(`[DEBUG_TEMP_COPY_ORIG]   ${idx}: ${item.type}(cmdName=${item.cmdName})(cmd=${item.cmd}) *** TOUCHACTIONINPUT`);
+                } else if (item.type === 'touchAction' || item.type === 'touchZone') {
+                    console.log(`[DEBUG_TEMP_COPY_ORIG]   ${idx}: ${item.type}(cmdName=${item.cmdName || 'none'})(cmd=${item.cmd || 'none'})`);
+                } else {
+                    console.log(`[DEBUG_TEMP_COPY_ORIG]   ${idx}: ${item.type}(cmdName=${item.cmdName || 'none'})(cmd=${item.cmd || 'none'})`);
+                }
+            });
+        }
+        
         const tempData = JSON.parse(JSON.stringify(originalData));
+        
+        console.log(`[DEBUG_TEMP_COPY_TEMP] Temp copy has ${tempData.items ? tempData.items.length : 0} items:`);
+        if (tempData.items) {
+            tempData.items.forEach((item, idx) => {
+                if (item.type === 'touchActionInput') {
+                    console.log(`[DEBUG_TEMP_COPY_TEMP]   ${idx}: ${item.type}(cmdName=${item.cmdName})(cmd=${item.cmd}) *** TOUCHACTIONINPUT`);
+                } else if (item.type === 'touchAction' || item.type === 'touchZone') {
+                    console.log(`[DEBUG_TEMP_COPY_TEMP]   ${idx}: ${item.type}(cmdName=${item.cmdName || 'none'})(cmd=${item.cmd || 'none'})`);
+                }
+            });
+        }
         
         // Store temporary copy
         tempEditDrawings[tempName] = {
@@ -2309,7 +2540,19 @@ app.post('/api/drawings/:tempName/temp-update', (req, res) => {
         } else if (editIndex !== null && editIndex !== undefined && editIndex >= 0 && editIndex < items.length) {
             // Edit mode for regular (non-touchAction) items: replace the specific item
             console.log(`Replacing item at index ${editIndex} in temporary drawing "${tempName}"`);
+            console.log(`[TEMP_DWG_DEBUG] Temp drawing "${tempName}" items before replacement:`);
+            items.forEach((item, index) => {
+                console.log(`[TEMP_DWG_DEBUG]   ${index}: ${item.type}${item.idxName ? `(idxName=${item.idxName})` : ''}${item.cmdName ? `(cmdName=${item.cmdName})` : ''}`);
+            });
+            console.log(`[EDIT_DEBUG] Before replacement - items.length: ${items.length}`);
+            console.log(`[EDIT_DEBUG] Item at editIndex ${editIndex} before replacement:`, JSON.stringify(items[editIndex]));
             items[editIndex] = item;
+            console.log(`[EDIT_DEBUG] After replacement - items.length: ${items.length}`);
+            console.log(`[EDIT_DEBUG] Item at editIndex ${editIndex} after replacement:`, JSON.stringify(items[editIndex]));
+            console.log(`[TEMP_DWG_DEBUG] Temp drawing "${tempName}" items after replacement:`);
+            items.forEach((item, index) => {
+                console.log(`[TEMP_DWG_DEBUG]   ${index}: ${item.type}${item.idxName ? `(idxName=${item.idxName})` : ''}${item.cmdName ? `(cmdName=${item.cmdName})` : ''}`);
+            });
             tempEditDrawings[tempName].tempPreviewItem = null; // Not using temp preview for edit mode
             // update associated touchAction touchActionInput
             console.log(` After item replacement:`);
@@ -2332,38 +2575,116 @@ app.post('/api/drawings/:tempName/temp-update', (req, res) => {
             } else {
               // update idx
               console.log(` Calling updateNumericIndices:`);
+              console.log(`[EDIT_DEBUG] Before updateNumericIndices - items.length: ${items.length}`);
               updateNumericIndices(tempEditDrawings[tempName].data,tempName);
+              console.log(`[EDIT_DEBUG] After updateNumericIndices - items.length: ${items.length}`);
+              items.forEach((item, index) => {
+                console.log(`[EDIT_DEBUG]   ${index}: ${item.type}${item.cmdName ? `(cmdName=${item.cmdName})` : ''}${item.cmd ? `(cmd=${item.cmd})` : '(no_cmd)'}${item.idxName ? `(idxName=${item.idxName})` : ''}`);
+              });
+              console.log(`[TEMP_DWG_DEBUG] Final temp drawing "${tempName}" state after all processing:`);
+              tempEditDrawings[tempName].data.items.forEach((item, index) => {
+                console.log(`[TEMP_DWG_DEBUG]   ${index}: ${item.type}${item.idxName ? `(idxName=${item.idxName})` : ''}${item.cmdName ? `(cmdName=${item.cmdName})` : ''}`);
+              });
             }
         } else {
             // Add mode for regular (non-touchAction) items: handle temporary preview item
-            // Remove the previous temporary preview item if it exists
+            
+            // Clean up any existing temporary items that don't match the current item type
             if (tempEditDrawings[tempName].tempPreviewItem) {
                 const lastIndex = items.length - 1;
-                // Remove the last item if it matches our temp preview item
+                // Remove the last item if it's temporary and different type than what we're adding
                 if (lastIndex >= 0 && items[lastIndex].__isTemporary) {
-                    items.pop();
-                    console.log(`Removed previous temporary preview item`);
+                    const existingTempType = items[lastIndex].type;
+                    if (existingTempType !== item.type) {
+                        items.pop();
+                        console.log(`Removed previous temporary ${existingTempType} item when switching to ${item.type}`);
+                        tempEditDrawings[tempName].tempPreviewItem = null;
+                    }
                 }
             }
             
-            // Mark the new item as temporary for preview
-            const tempItem = { ...item, __isTemporary: true };
-            
-            // Add the new temporary item
-            items.push(tempItem);
-            tempEditDrawings[tempName].tempPreviewItem = tempItem;
-            console.log(`Added temporary preview item to "${tempName}"`);
+            // Skip temporary preview processing for command items (hide, unhide, erase)
+            if (item.type === 'hide' || item.type === 'unhide' || item.type === 'erase') {
+                // Command items should be added directly without temporary preview processing
+                items.push(item);
+                console.log(`Added command item "${item.type}" directly to "${tempName}"`);
+            } else {
+                // Remove the previous temporary preview item if it exists
+                if (tempEditDrawings[tempName].tempPreviewItem) {
+                    const lastIndex = items.length - 1;
+                    // Remove the last item if it matches our temp preview item
+                    if (lastIndex >= 0 && items[lastIndex].__isTemporary) {
+                        items.pop();
+                        console.log(`Removed previous temporary preview item`);
+                    }
+                }
+                
+                // Mark the new item as temporary for preview
+                const tempItem = { ...item, __isTemporary: true };
+                
+                // Add the new temporary item
+                items.push(tempItem);
+                tempEditDrawings[tempName].tempPreviewItem = tempItem;
+                console.log(`Added temporary preview item to "${tempName}"`);
+            }
         }
         
         // Update version to force refresh
         tempEditDrawings[tempName].data.version = `V${Date.now()}`;
         
+        // Skip updateNumericIndices for touchAction isolated environments to prevent touchAction removal
+        // TouchAction item isolated environments don't have the full context needed for idx validation
+        // Regular indexed item updates still need updateNumericIndices when "Use Index" is ticked
+        if (!tempName.includes('_touchAction_item_edit')) {
+            // recalculate idx incase just add idx setting
+            updateNumericIndices(tempEditDrawings[tempName].data, tempName);
+        } else {
+            console.log(`[TEMP_UPDATE] Skipping updateNumericIndices for touchAction isolated environment: ${tempName}`);
+        }
+        
         // Sync changes for all temp drawings (always sync to preview drawing for touchAction)
         if (tempName.endsWith('_touchAction_edit') || tempName.endsWith('_touchAction_item_edit')) {
-            touchActionHandler.syncTempEditToPreview(tempName, tempEditDrawings, drawings);
+            const syncedDrawingData = touchActionHandler.syncTempEditToPreview(tempName, tempEditDrawings, drawings, updateNumericIndices);
+            
+            // Call updateNumericIndices on the synced drawing data to fix any cmd/idx mismatches after sync
+            if (syncedDrawingData) {
+                updateNumericIndices(syncedDrawingData, tempName);
+                console.log(`[TEMP_UPDATE] Updated numeric indices for synced drawing after sync`);
+            }
+        } else if (tempName.endsWith('_touchActionInput_edit')) {
+            // Sync touchActionInput changes to preview drawing (not main drawing)
+            // This allows proper preview functionality without persisting to main until accept
+            const syncedDrawingData = touchActionInputHandler.syncTouchActionInputToPreview(tempName, tempEditDrawings, drawings);
+            
+            // Call updateNumericIndices on synced drawing data to fix any cmd/idx mismatches after sync
+            if (syncedDrawingData) {
+                updateNumericIndices(syncedDrawingData, tempName);
+                console.log(`[TEMP_UPDATE] Updated numeric indices for synced drawing after touchActionInput sync`);
+            }
+            
+            // Debug: verify sync worked
+            const tempDrawing = tempEditDrawings[tempName];
+            if (tempDrawing && tempDrawing.originalName) {
+                const mainDrawing = drawings[tempDrawing.originalName];
+                if (mainDrawing && mainDrawing.data && mainDrawing.data.items) {
+                    const touchActionInputCount = mainDrawing.data.items.filter(item => item.type === 'touchActionInput').length;
+                    console.log(`[SYNC_DEBUG] After sync: Main drawing "${tempDrawing.originalName}" has ${touchActionInputCount} touchActionInput items`);
+                    mainDrawing.data.items.forEach((item, index) => {
+                        if (item.type === 'touchActionInput') {
+                            console.log(`[SYNC_DEBUG] Item ${index}: touchActionInput(cmdName=${item.cmdName})`);
+                        }
+                    });
+                }
+            }
         } else if (!preview) {
             // Only sync changes to main drawing if this is not a preview update (for non-touchAction)
-            touchActionHandler.syncTempEditToPreview(tempName, tempEditDrawings, drawings);
+            const syncedDrawingData = touchActionHandler.syncTempEditToPreview(tempName, tempEditDrawings, drawings, updateNumericIndices);
+            
+            // Call updateNumericIndices on synced drawing data to fix any cmd/idx mismatches
+            if (syncedDrawingData) {
+                updateNumericIndices(syncedDrawingData, tempName);
+                console.log(`[TEMP_UPDATE] Updated numeric indices for synced drawing after non-preview sync`);
+            }
         } else {
             console.log(`[SYNC] No sync needed: tempEdit=true, preview=${preview}`);
         }
@@ -2394,6 +2715,13 @@ app.post('/api/drawings/:tempName/sync-touchaction', (req, res) => {
     console.log(`[ENDPOINT] POST /api/drawings/:tempName/sync-touchaction - tempName="${req.params.tempName}", cmdName="${req.body.cmdName}" cmd="${req.body.cmd}"`);
     console.log(`[TOUCHACTION_SYNC_ENDPOINT] Request body contains touchAction with ${req.body.touchAction?.action?.length || 0} action items`);
     return touchActionHandler.syncTouchActionToServer(req, res, tempEditDrawings);
+});
+
+// Debug logging endpoint for client-side debugging
+app.post('/debug-log', (req, res) => {
+    const { message } = req.body;
+    console.log(`[CLIENT_DEBUG] ${message}`);
+    res.json({ success: true });
 });
 
 // Set refresh to zero on temporary drawing (for editing mode)
@@ -2451,7 +2779,13 @@ app.post('/api/drawings/:tempName/update-canvas', (req, res) => {
         tempEditDrawings[tempName].data.version = `V${Date.now()}`;
         
         // Sync changes to edit preview drawing and original
-        touchActionHandler.syncTempEditToPreview(tempName, tempEditDrawings, drawings);
+        const syncedDrawingData = touchActionHandler.syncTempEditToPreview(tempName, tempEditDrawings, drawings, updateNumericIndices);
+        
+        // Call updateNumericIndices on synced drawing data to fix any cmd/idx mismatches after canvas update
+        if (syncedDrawingData) {
+            updateNumericIndices(syncedDrawingData, tempName);
+            console.log(`[TEMP_UPDATE] Updated numeric indices for synced drawing after canvas update`);
+        }
         
         console.log(`Updated canvas properties for temporary drawing "${tempName}": ${x}x${y}, color=${color} (refresh remains 0 during editing)`);
         
@@ -2511,12 +2845,12 @@ app.post('/api/drawings/:tempName/accept', (req, res) => {
     
     // Delegate touchAction accepts to the handler
     if (tempName.includes('_touchAction_edit')) {
-        return touchActionHandler.acceptTouchActionChanges(req, res, drawings, tempEditDrawings);
+        return touchActionHandler.acceptTouchActionChanges(req, res, drawings, tempEditDrawings, reorderTouchActionItems);
     }
     
     // Delegate touchActionInput accepts to the handler
     if (tempName.includes('_touchActionInput_edit')) {
-        return touchActionInputHandler.acceptTouchActionInputChanges(req, res, drawings, tempEditDrawings);
+        return touchActionInputHandler.acceptTouchActionInputChanges(req, res, drawings, tempEditDrawings, reorderTouchActionItems);
     }
     
     if (!tempEditDrawings[tempName]) {
@@ -2539,6 +2873,18 @@ app.post('/api/drawings/:tempName/accept', (req, res) => {
         // Standard full drawing replacement for non-touchAction editing
         console.log(`[ACCEPT] Processing non-touchAction edit: ${tempName}`);
         const tempData = tempEditDrawings[tempName].data;
+        
+        console.log(`[DEBUG_BEFORE_CLEAN] TempData has ${tempData.items ? tempData.items.length : 0} items:`);
+        if (tempData.items) {
+            tempData.items.forEach((item, idx) => {
+                if (item.type === 'touchActionInput') {
+                    console.log(`[DEBUG_BEFORE_CLEAN]   ${idx}: ${item.type}(cmdName=${item.cmdName})(cmd=${item.cmd}) *** TOUCHACTIONINPUT`);
+                } else {
+                    console.log(`[DEBUG_BEFORE_CLEAN]   ${idx}: ${item.type}${item.cmdName ? `(cmdName=${item.cmdName})` : `('')`}${item.cmd ? `(cmd=${item.cmd})` : `('')`}${item.idxName ? `(idxName=${item.idxName})` : `('')`}`);
+                }
+            });
+        }
+        
         const cleanedData = JSON.parse(JSON.stringify(tempData));
         
         // Remove temporary markers from items
@@ -2548,16 +2894,52 @@ app.post('/api/drawings/:tempName/accept', (req, res) => {
                 return cleanItem;
             });
             
+            console.log(`[DEBUG_AFTER_CLEAN] CleanedData has ${cleanedData.items ? cleanedData.items.length : 0} items:`);
+            cleanedData.items.forEach((item, idx) => {
+                if (item.type === 'touchActionInput') {
+                    console.log(`[DEBUG_AFTER_CLEAN]   ${idx}: ${item.type}(cmdName=${item.cmdName})(cmd=${item.cmd}) *** TOUCHACTIONINPUT`);
+                } else {
+                    console.log(`[DEBUG_AFTER_CLEAN]   ${idx}: ${item.type}${item.cmdName ? `(cmdName=${item.cmdName})` : `('')`}${item.cmd ? `(cmd=${item.cmd})` : `('')`}${item.idxName ? `(idxName=${item.idxName})` : `('')`}`);
+                }
+            });
+            
             // Only reorder if:
             // a) touchAction or touchActionInput items were added
             // b) touchZone was moved up or down
             const originalItems = drawings[originalName].data.items || [];
             
             // Check if new touchAction/touchActionInput items were added
+            console.log('[DEBUG_REORDER] Checking for new touchActions...');
+            console.log('[DEBUG_REORDER] Original items count:', originalItems.length);
+            console.log('[DEBUG_REORDER] New items count:', cleanedData.items.length);
+            
+            // Log all touchAction/touchActionInput items in original and new
+            const origTouchItems = originalItems.filter(item => 
+                item.type === 'touchAction' || item.type === 'touchActionInput'
+            );
+            const newTouchItems = cleanedData.items.filter(item => 
+                item.type === 'touchAction' || item.type === 'touchActionInput'
+            );
+            
+            console.log('[DEBUG_REORDER] Original touchAction/touchActionInput items:');
+            origTouchItems.forEach((item, idx) => {
+                console.log(`[DEBUG_REORDER]   ${idx}: ${item.type}(cmdName=${item.cmdName})(cmd=${item.cmd})`);
+            });
+            
+            console.log('[DEBUG_REORDER] New touchAction/touchActionInput items:');
+            newTouchItems.forEach((item, idx) => {
+                console.log(`[DEBUG_REORDER]   ${idx}: ${item.type}(cmdName=${item.cmdName})(cmd=${item.cmd})`);
+            });
+            
             const newTouchActions = cleanedData.items.filter(item => 
                 (item.type === 'touchAction' || item.type === 'touchActionInput') &&
                 !originalItems.some(orig => orig.type === item.type && orig.cmd === item.cmd)
             );
+            
+            console.log('[DEBUG_REORDER] Items detected as NEW touchActions:');
+            newTouchActions.forEach((item, idx) => {
+                console.log(`[DEBUG_REORDER]   ${idx}: ${item.type}(cmdName=${item.cmdName})(cmd=${item.cmd}) - NO MATCH in original`);
+            });
             
             // Check if touchZones were moved (different positions)
             const touchZonesMoved = originalItems.some((origItem, origIndex) => {
@@ -2569,6 +2951,9 @@ app.post('/api/drawings/:tempName/accept', (req, res) => {
                 }
                 return false;
             });
+            
+            console.log('[DEBUG_REORDER] TouchZones moved:', touchZonesMoved);
+            console.log('[DEBUG_REORDER] newTouchActions.length:', newTouchActions.length);
             
             const needsReordering = newTouchActions.length > 0; // || touchZonesMoved;
             
@@ -2585,6 +2970,10 @@ app.post('/api/drawings/:tempName/accept', (req, res) => {
         cleanedData.refresh = mainRefresh;
         
         drawings[originalName].data = cleanedData;
+        
+        // Call updateNumericIndices to fix any cmd/idx mismatches after main drawing update
+        updateNumericIndices(drawings[originalName].data, originalName);
+        console.log(`[ACCEPT] Updated numeric indices for main drawing ${originalName} after accept`);
         
         // Generate new version for original
         drawings[originalName].data.version = `V${Date.now()}`;
@@ -2806,11 +3195,15 @@ app.post('/api/drawings/import', (req, res) => {
                 item.idxName = 'idx_'+item.idx;
               }
             } else {
-              if (item.indexed !== undefined) {
-                delete item.indexed;
-              }
-              if (item.idxName !== undefined) {
-                delete item.idxName;
+              // Only clean up indexed and idxName for items that aren't supposed to have them
+              // touchActionInput can have idxName without idx (it references other indexed items)
+              if (item.type !== 'touchActionInput') {
+                if (item.indexed !== undefined) {
+                  delete item.indexed;
+                }
+                if (item.idxName !== undefined) {
+                  delete item.idxName;
+                }
               }
             }
             if (item.cmd) {

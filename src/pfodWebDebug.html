@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-   pfodWeb.html
+   pfodWebDebug.html
  * (c)2025 Forward Computing and Control Pty. Ltd.
  * NSW Australia, www.forward.com.au
  * This code is not warranted to be fit for any purpose. You may only use it at your own risk.
@@ -54,15 +54,6 @@
             display: block;
             padding: 0px;
         }
-        #loading-text {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
-            font-size: 16px;
-            z-index: 10;
-        }
         #message-overlay {
             display: none;
             position: fixed;
@@ -96,7 +87,7 @@
     <div id="canvas-container">
         <div id="white-border">
             <div id="black-border">
-              <div id="border-inner" style="position: relative;">
+              <div id="border-inner">
                 <canvas id="drawing-canvas" width="300" height="100"></canvas>
             </div>
             </div>
@@ -118,8 +109,8 @@
         <p id="message-text"></p>
     </div>
 
-    <!-- Load main application script which will load its dependencies -->
+    <!-- Load version first, then main application script which will load its dependencies -->
     <script src="./version.js"></script>
-    <script src="./pfodWeb.js"></script>
+    <script src="./pfodWebDebug.js"></script>
 </body>
 </html>

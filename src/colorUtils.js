@@ -82,35 +82,13 @@ function getBlackWhite(color) {
         return [r, g, b];
     }
     
-    // Calculate relative luminance
-    function getLuminance(r, g, b) {
-        const [rs, gs, bs] = [r, g, b].map(c => {
-            c = c / 255;
-            return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-        });
-        return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
-    }
-    
-    // Calculate contrast ratio between two colors
-    function getContrastRatio(lum1, lum2) {
-        const lighter = Math.max(lum1, lum2);
-        const darker = Math.min(lum1, lum2);
-        return (lighter + 0.05) / (darker + 0.05);
-    }
-    
     const [r, g, b] = getRGB(color);
-    const colorLuminance = getLuminance(r, g, b);
     
-    // Luminance values for pure black and white
-    const blackLuminance = 0;
-    const whiteLuminance = 1;
+    // Use the same algorithm as Java code: y = (299 * R + 587 * G + 114 * B) / 1000
+    const y = (299 * r + 587 * g + 114 * b) / 1000;
     
-    // Calculate contrast ratios
-    const contrastWithBlack = getContrastRatio(colorLuminance, blackLuminance);
-    const contrastWithWhite = getContrastRatio(colorLuminance, whiteLuminance);
-    
-    // Return the color number with higher contrast
-    return contrastWithBlack > contrastWithWhite ? 0 : 15; // BLACK (0) : WHITE (15)
+    // If y >= 128, background is light, use black text. Otherwise use white text.
+    return y >= 128 ? 0 : 15; // BLACK (0) : WHITE (15)
 }
 
 

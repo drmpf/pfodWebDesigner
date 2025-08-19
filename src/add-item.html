@@ -138,6 +138,90 @@
         h2 {
             font-size: 1.5em;
         }
+        .item-row {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+            background-color: white;
+            transition: background-color 0.2s;
+        }
+        .item-row:hover {
+            background-color: #f8f9fa;
+        }
+        .item-index {
+            width: 80px;
+            text-align: center;
+            font-weight: bold;
+            color: #666;
+            font-size: 12px;
+        }
+        .item-type {
+            width: 90px;
+            text-align: center;
+            font-weight: bold;
+            color: #007bff;
+            font-size: 12px;
+        }
+        .item-details {
+            flex: 1;
+            margin-left: 15px;
+            font-size: 12px;
+            color: #333;
+        }
+        .item-actions {
+            display: flex;
+            gap: 8px;
+        }
+        .btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: opacity 0.2s;
+        }
+        .btn:hover {
+            opacity: 0.8;
+        }
+        .btn-show {
+            background-color: #17a2b8;
+            color: white;
+        }
+        .btn-show:active {
+            background-color: #138496;
+        }
+        .btn-erase {
+            background-color: #dc3545;
+            color: white;
+        }
+        .btn-hide {
+            background-color: #6c757d;
+            color: white;
+        }
+        .btn-unhide {
+            background-color: #28a745;
+            color: white;
+        }
+        .no-items {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-style: italic;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .section-header {
+            font-weight: bold;
+            color: #333;
+            padding: 10px 12px;
+            background-color: #f8f9fa;
+            border-bottom: 1px solid #ddd;
+            margin: 0;
+        }
     </style>
 </head>
 <body>
@@ -159,7 +243,7 @@
                     <option value="pushZero">pushZero</option>
                     <option value="popZero">popZero</option>
                     <option value="index">Index Placeholder</option>
-                    <option value="erase">Erase Item</option>
+                <!--    <option value="erase">Erase Item</option>  -->
                     <option value="hide">Hide Item</option>
                     <option value="unhide">Unhide Item</option>
                 </select>
@@ -220,42 +304,59 @@
             </div>
             
             <!-- Erase Item Properties -->
+            <!--
             <div id="erase-properties" style="display: none;">
                 <p>Erase completely removes the specified index or command.</p>
                 <div class="form-group">
                     <label for="erase-type">Erase Type:</label>
                     <select id="erase-type" onchange="toggleEraseInputs()">
-                        <option value="idx">By Index</option>
-                        <option value="cmd">By Command</option>
+                        <option value="idx">Indexed Item</option>
+                        <option value="cmd">touchZone</option>
+                        <option value="dwg">Inserted Dwg</option>
                     </select>
                 </div>
                 <div id="erase-idx-input" class="form-group">
-                    <label for="erase-idx">Index (≥ 1):</label>
-                    <input type="number" id="erase-idx" min="1" value="1">
+                    <div class="items-list" id="erase-items-list" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; display: none;">
+                        <div class="loading">Loading available indexed items...</div>
+                    </div>
                 </div>
                 <div id="erase-cmd-input" class="form-group" style="display: none;">
-                    <label for="erase-cmd">Command:</label>
-                    <input type="text" id="erase-cmd" maxlength="1" placeholder="A">
+                    <div class="items-list" id="erase-cmd-list" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd;">
+                        <div class="loading">Loading available touchZones...</div>
+                    </div>
+                </div>
+                <div id="erase-dwg-input" class="form-group" style="display: none;">
+                    <div class="items-list" id="erase-dwg-list" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd;">
+                        <div class="loading">Loading available inserted drawings...</div>
+                    </div>
                 </div>
             </div>
-            
+            -->
             <!-- Hide Item Properties -->
             <div id="hide-properties" style="display: none;">
                 <p>Hide makes the item with the specified index or command invisible.</p>
                 <div class="form-group">
                     <label for="hide-type">Hide Type:</label>
                     <select id="hide-type" onchange="toggleHideInputs()">
-                        <option value="idx">By Index</option>
-                        <option value="cmd">By Command</option>
+                        <option value="idx">Indexed Items</option>
+                        <option value="cmd">touchZones</option>
+                        <option value="dwg">Inserted Dwgs</option>
                     </select>
                 </div>
                 <div id="hide-idx-input" class="form-group">
-                    <label for="hide-idx">Index (≥ 1):</label>
-                    <input type="number" id="hide-idx" min="1" value="1">
+                    <div class="items-list" id="hide-items-list" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; display: none;">
+                        <div class="loading">Loading available indexed items...</div>
+                    </div>
                 </div>
                 <div id="hide-cmd-input" class="form-group" style="display: none;">
-                    <label for="hide-cmd">Command:</label>
-                    <input type="text" id="hide-cmd" maxlength="1" placeholder="A">
+                    <div class="items-list" id="hide-cmd-list" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd;">
+                        <div class="loading">Loading available touchZones...</div>
+                    </div>
+                </div>
+                <div id="hide-dwg-input" class="form-group" style="display: none;">
+                    <div class="items-list" id="hide-dwg-list" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd;">
+                        <div class="loading">Loading available inserted drawings...</div>
+                    </div>
                 </div>
             </div>
             
@@ -265,17 +366,25 @@
                 <div class="form-group">
                     <label for="unhide-type">Unhide Type:</label>
                     <select id="unhide-type" onchange="toggleUnhideInputs()">
-                        <option value="idx">By Index</option>
-                        <option value="cmd">By Command</option>
+                        <option value="idx">Indexed Items</option>
+                        <option value="cmd">touchZones</option>
+                        <option value="dwg">Inserted Dwgs</option>
                     </select>
                 </div>
                 <div id="unhide-idx-input" class="form-group">
-                    <label for="unhide-idx">Index (≥ 1):</label>
-                    <input type="number" id="unhide-idx" min="1" value="1">
+                    <div class="items-list" id="unhide-items-list" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; display: none;">
+                        <div class="loading">Loading available indexed items...</div>
+                    </div>
                 </div>
                 <div id="unhide-cmd-input" class="form-group" style="display: none;">
-                    <label for="unhide-cmd">Command:</label>
-                    <input type="text" id="unhide-cmd" maxlength="1" placeholder="A">
+                    <div class="items-list" id="unhide-cmd-list" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd;">
+                        <div class="loading">Loading available touchZones...</div>
+                    </div>
+                </div>
+                <div id="unhide-dwg-input" class="form-group" style="display: none;">
+                    <div class="items-list" id="unhide-dwg-list" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd;">
+                        <div class="loading">Loading available inserted drawings...</div>
+                    </div>
                 </div>
             </div>
             
@@ -286,6 +395,11 @@
                     <select id="insertDwg-name">
                         <option value="">Loading available drawings...</option>
                     </select>
+                </div>
+                <div class="form-group">
+                    <label for="insertDwg-cmdName">Command Name:</label>
+                    <input type="text" id="insertDwg-cmdName" readonly style="background-color: #f5f5f5; cursor: not-allowed;">
+                    <small style="color: #666; display: block; margin-top: 2px;">Auto-generated based on drawing name (dwg_DrawingName)</small>
                 </div>
                  <label for="insertDwg-name"><br>Set the (0,0) position in the Inserted Drawing<br>Positive values moves the inserted dwg left and up<br>Usually left as (0,0) and PushZero used instead</label>
                  <div class="inline-group">
@@ -350,7 +464,7 @@
                 </div>
                 <div class="form-group-row">
                     <label_row for="label-text">Text:</label_row>
-                    <input type="text" id="label-text" value="Label Text" placeholder="Text to display">
+                    <textarea id="label-text" placeholder="Text to display (use Enter for new lines)" rows="3" style="width: 100%; resize: vertical; font-family: inherit;">Label Text</textarea>
                 </div>
                 <div class="inline-group">
                     <div class="half-width">
@@ -410,7 +524,7 @@
                 </div>
                 <div class="form-group-row">
                     <label_row for="value-text">Prefix Text:</label_row>
-                    <input type="text" id="value-text" value="Value: " placeholder="Text before the scaled value">
+                    <textarea id="value-text" placeholder="Text before the scaled value (use Enter for new lines)" rows="3" style="width: 100%; resize: vertical; font-family: inherit;">Value: </textarea>
                 </div>
                 <div class="inline-group">
                     <div class="half-width">
@@ -618,7 +732,7 @@
             </div>
         </div>
     </div>
-
+    <script src="version.js"></script>
     <script src="colorUtils.js"></script>
     <script src="redraw.js"></script>
     <script src="shared-iframe.js"></script>

@@ -30,22 +30,23 @@ function createTouchActionInputTempCopy(req, res, drawings, tempEditDrawings) {
     try {
         // Create temporary name for touchActionInput mode
         const tempName = `${drawingName}_touchActionInput_edit`;
+        const previewName = `${drawingName}_touchActionInput_edit_preview`;
         
-        // Check if temporary drawing already exists
+        // Always recreate temp drawing from current main drawing to ensure up-to-date data
         if (tempEditDrawings[tempName]) {
-            console.log(`Using existing temporary drawing: ${tempName}`);
-            return res.json({ 
-                success: true, 
-                tempName: tempName,
-                message: `Using existing temporary copy: ${tempName}` 
-            });
+            console.log(`Removing existing temporary drawing: ${tempName} (recreating from current main drawing)`);
+            delete tempEditDrawings[tempName];
+            if (tempEditDrawings[previewName]) {
+                delete tempEditDrawings[previewName];
+            }
         }
         
         // Deep copy the original drawing
         const originalData = drawings[drawingName].data;
         const tempData = JSON.parse(JSON.stringify(originalData));
+        const previewData = JSON.parse(JSON.stringify(originalData));
         
-        // Store temporary copy
+        // Store temporary copy for editing
         tempEditDrawings[tempName] = {
             originalName: drawingName,
             data: tempData,
@@ -55,7 +56,18 @@ function createTouchActionInputTempCopy(req, res, drawings, tempEditDrawings) {
             editIndex: editIndex !== undefined ? parseInt(editIndex) : undefined
         };
         
+        // Store temporary copy for preview
+        tempEditDrawings[previewName] = {
+            originalName: drawingName,
+            data: previewData,
+            updates: [],
+            tempPreviewItem: null,
+            mode: mode,
+            editIndex: editIndex !== undefined ? parseInt(editIndex) : undefined
+        };
+        
         console.log(`Created temporary copy "${tempName}" from "${drawingName}"`);
+        console.log(`Created preview temporary copy "${previewName}" from "${drawingName}"`);
         
         res.json({ 
             success: true, 
@@ -71,8 +83,8 @@ function createTouchActionInputTempCopy(req, res, drawings, tempEditDrawings) {
     }
 }
 
-// Accept touchActionInput edit changes
-function acceptTouchActionInputChanges(req, res, drawings, tempEditDrawings) {
+// Accept touchActionInput edit changes  
+function acceptTouchActionInputChanges(req, res, drawings, tempEditDrawings, reorderTouchActionItems) {
     const { tempName } = req.params;
     
     if (!tempEditDrawings[tempName]) {
@@ -112,11 +124,32 @@ function acceptTouchActionInputChanges(req, res, drawings, tempEditDrawings) {
         
         drawings[originalName].data = cleanedData;
         
+        // Call reorderTouchActionItems to fix any cmd/idx mismatches after main drawing update
+        if (reorderTouchActionItems) {
+            drawings[originalName].data.items = reorderTouchActionItems(drawings[originalName].data.items, drawings[originalName].data.items, originalName);
+            console.log(`[TOUCHACTIONINPUT_ACCEPT] Reordered touch action items for main drawing ${originalName} after accept`);
+        }
+        
         // Generate new version for original
         drawings[originalName].data.version = `V${Date.now()}`;
         
-        // Clean up temporary copy
+        // Clean up both main and preview temporary copies
         delete tempEditDrawings[tempName];
+        
+        // Also clean up the corresponding temp drawing (main or preview)
+        const baseName = tempName.replace('_touchActionInput_edit_preview', '')
+                                 .replace('_touchActionInput_edit', '');
+        const mainTempName = `${baseName}_touchActionInput_edit`;
+        const previewTempName = `${baseName}_touchActionInput_edit_preview`;
+        
+        if (tempEditDrawings[mainTempName] && mainTempName !== tempName) {
+            delete tempEditDrawings[mainTempName];
+            console.log(`Cleaned up associated temp drawing: ${mainTempName}`);
+        }
+        if (tempEditDrawings[previewTempName] && previewTempName !== tempName) {
+            delete tempEditDrawings[previewTempName];
+            console.log(`Cleaned up associated temp drawing: ${previewTempName}`);
+        }
         
         console.log(`Accepted touchActionInput edit changes from "${tempName}" to "${originalName}"`);
         
@@ -223,11 +256,146 @@ function setupTouchActionInputRoutes(app, drawings, tempEditDrawings) {
     // Note: touchActionInput-specific endpoints could be added here if needed later
 }
 
+// Sync touchActionInput temp changes to preview drawing (for preview only)
+function syncTouchActionInputToPreview(tempName, tempEditDrawings, drawings) {
+    const previewName = `${tempName}_preview`;
+    
+    if (!tempEditDrawings[tempName] || !tempEditDrawings[previewName]) {
+        console.error(`[TOUCHACTIONINPUT_PREVIEW_SYNC] Missing drawings: edit=${!!tempEditDrawings[tempName]}, preview=${!!tempEditDrawings[previewName]}`);
+        return false;
+    }
+    
+    try {
+        const editData = tempEditDrawings[tempName].data;
+        const previewData = tempEditDrawings[previewName].data;
+        
+        // Find the touchActionInput in the edit environment
+        const touchActionInput = editData.items.find(item => item.type === 'touchActionInput');
+        
+        if (!touchActionInput) {
+            console.log(`[TOUCHACTIONINPUT_PREVIEW_SYNC] No touchActionInput found in edit environment - removing from preview`);
+            // Remove any existing touchActionInput from preview
+            previewData.items = previewData.items.filter(item => item.type !== 'touchActionInput');
+            return true;
+        }
+        
+        const cmdName = touchActionInput.cmdName;
+        console.log(`[TOUCHACTIONINPUT_PREVIEW_SYNC] Syncing touchActionInput(cmdName=${cmdName}) to preview: ${previewName}`);
+        
+        // Remove any existing touchActionInput with the same cmdName from preview
+        previewData.items = previewData.items.filter(item => 
+            !(item.type === 'touchActionInput' && item.cmdName === cmdName)
+        );
+        
+        // Find the touchZone index in preview to insert touchActionInput after it
+        const touchZoneIndex = previewData.items.findIndex(item => 
+            item.type === 'touchZone' && item.cmdName === cmdName
+        );
+        
+        if (touchZoneIndex !== -1) {
+            // Insert touchActionInput after the touchZone
+            previewData.items.splice(touchZoneIndex + 1, 0, { ...touchActionInput });
+            console.log(`[TOUCHACTIONINPUT_PREVIEW_SYNC] Added touchActionInput to preview after touchZone at index ${touchZoneIndex + 1}`);
+        } else {
+            // No matching touchZone found, add at end
+            previewData.items.push({ ...touchActionInput });
+            console.log(`[TOUCHACTIONINPUT_PREVIEW_SYNC] Added touchActionInput to preview at end (no matching touchZone found)`);
+        }
+        
+        // Return the preview drawing data that needs reorderTouchActionItems
+        console.log(`[TOUCHACTIONINPUT_PREVIEW_SYNC] Preview sync completed - returning drawing data for reorderTouchActionItems`);
+        
+        return tempEditDrawings[previewName].data;
+        
+    } catch (error) {
+        console.error(`[TOUCHACTIONINPUT_PREVIEW_SYNC] Error syncing to preview:`, error);
+        return null;
+    }
+}
+
+// Sync touchActionInput temp changes to main drawing
+function syncTouchActionInputToMain(tempName, tempEditDrawings, drawings) {
+    console.log(`[TOUCHACTIONINPUT_SYNC] Syncing ${tempName} to main drawing`);
+    
+    const tempDrawing = tempEditDrawings[tempName];
+    if (!tempDrawing) {
+        console.error(`[TOUCHACTIONINPUT_SYNC] Temp drawing ${tempName} not found`);
+        return null;
+    }
+    
+    const originalName = tempDrawing.originalName;
+    const mainDrawing = drawings[originalName];
+    if (!mainDrawing) {
+        console.error(`[TOUCHACTIONINPUT_SYNC] Main drawing ${originalName} not found`);
+        return null;
+    }
+    
+    // Find touchActionInput items in temp drawing
+    // Note: Include temporary items since they represent the current editing state
+    const tempItems = tempDrawing.data.items || [];
+    const touchActionInputItems = tempItems.filter(item => 
+        item.type === 'touchActionInput'
+    );
+    
+    if (touchActionInputItems.length === 0) {
+        console.log(`[TOUCHACTIONINPUT_SYNC] No touchActionInput items found in ${tempName}`);
+        return null;
+    }
+    
+    console.log(`[TOUCHACTIONINPUT_SYNC] Found ${touchActionInputItems.length} touchActionInput items to sync`);
+    
+    // Ensure main drawing has items array
+    if (!mainDrawing.data.items) {
+        mainDrawing.data.items = [];
+    }
+    
+    const mainItems = mainDrawing.data.items;
+    
+    // Sync each touchActionInput item
+    touchActionInputItems.forEach(inputItem => {
+        console.log(`[TOUCHACTIONINPUT_SYNC] Syncing touchActionInput(cmdName=${inputItem.cmdName})`);
+        
+        // Remove any existing touchActionInput with same cmdName to avoid duplicates
+        const existingIndex = mainItems.findIndex(existingItem => 
+            existingItem.type === 'touchActionInput' && existingItem.cmdName === inputItem.cmdName
+        );
+        if (existingIndex !== -1) {
+            mainItems.splice(existingIndex, 1);
+            console.log(`[TOUCHACTIONINPUT_SYNC] Removed existing touchActionInput with cmdName ${inputItem.cmdName}`);
+        }
+        
+        // Clean the temporary marker before adding to main drawing
+        const { __isTemporary, ...cleanInputItem } = inputItem;
+        
+        // Insert touchActionInput after the corresponding touchZone
+        const touchZoneIndex = mainItems.findIndex(existingItem => 
+            existingItem.type === 'touchZone' && existingItem.cmdName === inputItem.cmdName
+        );
+        
+        if (touchZoneIndex !== -1) {
+            mainItems.splice(touchZoneIndex + 1, 0, cleanInputItem);
+            console.log(`[TOUCHACTIONINPUT_SYNC] Added touchActionInput after touchZone at index ${touchZoneIndex + 1}`);
+        } else {
+            mainItems.push(cleanInputItem);
+            console.log(`[TOUCHACTIONINPUT_SYNC] Added touchActionInput at end of items array`);
+        }
+    });
+    
+    // Update main drawing version
+    mainDrawing.data.version = `V${Date.now()}`;
+    console.log(`[TOUCHACTIONINPUT_SYNC] Updated main drawing version to ${mainDrawing.data.version}`);
+    
+    // Return the main drawing data for reorderTouchActionItems call
+    return mainDrawing.data;
+}
+
 module.exports = {
     setupTouchActionInputRoutes,
     createTouchActionInputTempCopy,
     acceptTouchActionInputChanges,
     cleanupTouchActionInputTemp,
     validateTouchActionInputMode,
-    insertTouchActionInputByCMD
+    insertTouchActionInputByCMD,
+    syncTouchActionInputToMain,
+    syncTouchActionInputToPreview
 };

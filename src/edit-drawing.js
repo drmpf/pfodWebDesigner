@@ -686,6 +686,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Function to get item details text
+    // Helper function to truncate text to prevent UI overflow
+    function truncateText(text, maxLength = 10) {
+        if (!text) return '';
+        return text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+    }
+
     function getItemDetailsText(item) {
         const details = [];
         
@@ -694,7 +700,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         if (item.text) {
-            details.push(`Text: "${item.text}"`);
+            details.push(`Text: "${truncateText(item.text)}"`);
         }
         
         if (item.w !== undefined && item.h !== undefined) {
@@ -708,7 +714,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         if (item.drawingName) {
-            details.push(`Drawing: ${item.drawingName}`);
+            details.push(`Drawing: ${truncateText(item.drawingName, 30)}`);
         }
         
         if (item.indexed && item.idxName) {
@@ -725,6 +731,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (item.type == 'pushZero') {
           details.push(`(${item.x},${item.y}) scale:${item.scale}`);
         }
+        
+        // Note: hide/unhide/erase items already have idxName displayed above if indexed
+        
         return details.join(' | ') || 'No additional details';
     }
     

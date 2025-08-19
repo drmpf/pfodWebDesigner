@@ -13,11 +13,13 @@
  * sendUpdate()
  */
  
-  const arduinoExportVers = "pfodWeb Designer Arduino Export V1.0.1"
+ // Import version from version.js  
+  const arduinoExportVers = `pfodWeb Designer Arduino Export ${window.JS_VERSION}`
      let filesToZip = [];
      let insertedDwgs = [];
      let mainDwgName;
      let haveErrors = false;
+
 // Function to export drawing to Arduino code format
     function exportDrawingToArduino(drawingName) {
       if (!drawingName) return;
@@ -134,6 +136,8 @@ class Dwg_${dwgName} : public pfodDrawing {
     void sendUpdate();
     void sendIndexedItems();
 `;
+let idxList = [];
+let cmdList = [];
 // ======= processing Code block =======================
 // add idx names here
         // Process each item
@@ -142,7 +146,10 @@ class Dwg_${dwgName} : public pfodDrawing {
                 if (!item || !item.type || !(item.indexed === 'true' || item.indexed === true)) {
                   return;
                 }
-                arduinoCode += `    pfodAutoIdx ${item.idxName};\n`;
+                if (!idxList.includes(item.idxName)) {
+                  idxList.push(item.idxName);
+                  arduinoCode += `    pfodAutoIdx ${item.idxName};\n`;
+                }
             });
         }
         if (Array.isArray(drawingData.items)) {
@@ -150,7 +157,10 @@ class Dwg_${dwgName} : public pfodDrawing {
                 if (!item || !item.cmdName || !item.type || item.type !== 'touchZone' ) {
                   return;
                 }
-                arduinoCode += `    pfodAutoCmd ${item.cmdName};\n`;                
+                if (!cmdList.includes(item.cmdName)) {
+                  idxList.push(item.cmdName);
+                  arduinoCode += `    pfodAutoCmd ${item.cmdName};\n`; 
+                }
             });
         }
 arduinoCode += `\n`;
@@ -265,6 +275,9 @@ void Dwg_${dwgName}::sendIndexedItems() {
         // Process each item
         if (Array.isArray(drawingData.items)) {
             drawingData.items.forEach(item => {
+                if (item.type === 'hide' || item.type === 'unhide' || item.type === 'erase') {
+                  return; // skip index here as was sent in sendFullDrawing
+                }                
                 if (!item || !item.type || (!(item.indexed === 'true' || item.indexed === true)) || item.type === 'index' ) {
                   return; // skip index here as was sent in sendFullDrawing
                 }                
@@ -285,17 +298,27 @@ void Dwg_${dwgName}::sendFullDrawing() {
     dwgsPtr->start(${drawingData.x || 50}, ${drawingData.y || 50}, ${bgColor});
     parserPtr->sendRefreshAndVersion(dwgRefresh); // sets version and refresh time for dwg pfodWeb processes this
 `;
-
+let indexList = [];
 // ======= processing Code block =======================
         // Process each item
         if (Array.isArray(drawingData.items)) {
             drawingData.items.forEach(item => {
-                if ((item.indexed === 'true') || (item.indexed === true) ) {
-                   arduinoCode += `    dwgsPtr->index().idx(${item.idxName}).send(); // place holder for indexed item\n`;
-                } else {
+                if (item.type === 'hide' || item.type === 'unhide' || item.type === 'erase') {
                   const arduinoLine = convertItemToArduino(item);
                   if (arduinoLine) {
                     arduinoCode += `    ${arduinoLine}\n`;
+                  }                  
+                } else { // not hide unhide erase
+                  if ((item.indexed === 'true') || (item.indexed === true) ) {
+                    if (!indexList.includes(item.idxName)) {
+                      indexList.push(item.idxName);
+                      arduinoCode += `    dwgsPtr->index().idx(${item.idxName}).send(); // place holder for indexed item\n`;
+                    }
+                  } else {
+                    const arduinoLine = convertItemToArduino(item);
+                    if (arduinoLine) {
+                      arduinoCode += `    ${arduinoLine}\n`;
+                    }
                   }
                 }
             });
@@ -375,7 +398,8 @@ arduinoCode += `    dwgsPtr->end();
             
             case 'label':
                 let labelCode = addIdx('dwgsPtr->label()', item.idxName);
-                labelCode += `.color(${color}).text("${item.text || ''}")`;
+                const escapedText = (item.text || '').replace(/\n/g, '\\n');
+                labelCode += `.color(${color}).text("${escapedText}")`;
                 if (item.fontSize) labelCode += `.fontSize(${item.fontSize})`;
                 if (item.bold === 'true' || item.bold === true) labelCode += '.bold()';
                 if (item.italic === 'true' || item.italic === true) labelCode += '.italic()';
@@ -397,7 +421,8 @@ arduinoCode += `    dwgsPtr->end();
             
             case 'value':
                 let valueCode = addIdx('dwgsPtr->label()', item.idxName);
-                valueCode += `.color(${color}).text("${item.text || ''}")`;
+                const escapedValueText = (item.text || '').replace(/\n/g, '\\n');
+                valueCode += `.color(${color}).text("${escapedValueText}")`;
                 if (item.fontSize) valueCode += `.fontSize(${item.fontSize})`;
                 if (item.bold === 'true' || item.bold === true) valueCode += '.bold()';
                 if (item.italic === 'true' || item.italic === true) valueCode += '.italic()';
@@ -427,15 +452,17 @@ arduinoCode += `    dwgsPtr->end();
                 
                 valueCode += '.send();';
                 return valueCode;
-            
+                              
             case 'hide':
-                if (item.cmdName) return `dwgsPtr->hide().cmd(${item.cmdName}).send();`;
-                else if (item.idxName) return `dwgsPtr->hide().idx(${idxName}).send();`;
+                if (item.drawingName) return `dwgsPtr->hide().loadCmd(dwg_${item.drawingName}).send();`;
+                else if (item.cmdName) return `dwgsPtr->hide().cmd(${item.cmdName}).send();`;
+                else if (item.idxName) return `dwgsPtr->hide().idx(${item.idxName}).send();`;
                 else return `// hide: no cmd or idx specified`;
             
             case 'unhide':
-                if (item.cmdName) return `dwgsPtr->unhide().cmd(${item.cmdName}).send();`;
-                else if (item.idxName) return `dwgsPtr->unhide().idx(${idxName}).send();`;
+                if (item.drawingName) return `dwgsPtr->unhide().loadCmd(dwg_${item.drawingName}).send();`;
+                else if (item.cmdName) return `dwgsPtr->unhide().cmd(${item.cmdName}).send();`;
+                else if (item.idxName) return `dwgsPtr->unhide().idx(${item.idxName}).send();`;
                 else return `// unhide: no cmd or idx specified`;
             
             case 'touchzone':
@@ -482,13 +509,16 @@ arduinoCode += `    dwgsPtr->end();
                 return touchActionInputCode;
             
             case 'index':
-                if (item.idxName) return `dwgsPtr->index().idx(${item.idxName}).send();`;
+                if (item.cmdName) return `dwgsPtr->index().cmd(${item.cmdName}).send();`;
+                else if (item.idxName) return `dwgsPtr->index().idx(${item.idxName}).send();`;
                 else return `// index: no idx specified`;
             
+                  
             case 'erase':
-                if (item.cmdName) return `dwgsPtr->erase().cmd(${item.cmdName}).send();`;
+                if (item.drawingName) return `dwgsPtr->erase().loadCmd(dwg_${item.drawingName}).send();`;
+                else if (item.cmdName) return `dwgsPtr->erase().cmd(${item.cmdName}).send();`;
                 else if (item.idxName) return `dwgsPtr->erase().idx(${item.idxName}).send();`;
-                else return `// erase: no cmd or idx specified`;
+                else return `// hide: no cmd or idx specified`;
             
             case 'insertdwg':
                 return `dwgsPtr->insertDwg().loadCmd(dwg_${item.drawingName}).offset(${xOffset},${yOffset}).send();`;

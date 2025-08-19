@@ -50,8 +50,8 @@ if %ERRORLEVEL% NEQ 0 (
     echo Warning: Could not install express-session
 )
 
-::Start the server
-echo Starting server...
+::Start the pfodWebDesigner server
+echo Starting pfodWebDesigner server...
 echo The server will automatically find an available port, starting with 3000
 echo.
 echo Once the server has started, it will display the URL to access it
@@ -65,6 +65,7 @@ echo - View it at: http://localhost:^<PORT^>/mydrawing
 echo.
 echo Note: ^<PORT^> will be shown in the server output
 echo.
+:: call npm start >serverLog.txt
 call npm start
 
 pause

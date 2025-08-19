@@ -9,6 +9,14 @@
 
 // Touch Actions Manager Page Script
 
+// Helper function to truncate text to prevent UI overflow
+function truncateText(text, maxLength = 10) {
+    if (!text) return '';
+    const result = text.length > maxLength ? text.substring(0, maxLength) + '...' : text;
+    console.log(`[TRUNCATE_DEBUG] Input: "${text}" (${text.length} chars), Max: ${maxLength}, Result: "${result}"`);
+    return result;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     console.log("Touch actions manager page loaded");
     
@@ -151,16 +159,107 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
+        // Get preview drawing data which contains full context for visibility processing
+        const previewDrawingName = tempDrawingName.replace('_touchAction_edit', '_touchAction_edit_preview');
+        console.log(`[VISIBILITY_DEBUG] Fetching preview drawing: ${previewDrawingName}`);
+        fetch(`/${previewDrawingName}`, {
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(previewData => {
+            console.log(`[VISIBILITY_DEBUG] Fetched preview data with ${previewData.items ? previewData.items.length : 0} items`);
+            console.log(`[DEBUG] Processing ${previewData.items.length} items from preview drawing`);
+            
+            // Process ALL preview drawing items to determine final visibility states
+            const indexedItemsMap = new Map();
+            previewData.items.forEach((item, globalIndex) => {
+            if (item.idxName !== undefined && 
+                item.idxName.trim() !== '' && 
+                item.type !== 'touchActionInput' && 
+                item.type !== 'touchAction' &&
+                !item.__isTemporary) {
+                
+                // Handle hide/unhide/erase operations
+                if (item.type === 'hide' && item.idxName) {
+                    // Hide operation: update visible state if item exists
+                    if (indexedItemsMap.has(item.idxName)) {
+                        const existingItem = indexedItemsMap.get(item.idxName);
+                        existingItem.item.visible = false;
+                    }
+                } else if (item.type === 'unhide' && item.idxName) {
+                    // Unhide operation: update visible state if item exists
+                    if (indexedItemsMap.has(item.idxName)) {
+                        const existingItem = indexedItemsMap.get(item.idxName);
+                        existingItem.item.visible = true;
+                    }
+                } else if (item.type === 'erase' && item.idxName) {
+                    // Erase operation: remove item from map
+                    indexedItemsMap.delete(item.idxName);
+                } else if (item.type === 'index') {
+                    // Index item: only add if no existing item, ignore if already exists
+                    if (!indexedItemsMap.has(item.idxName)) {
+                        const newItem = {
+                            item: {...item},
+                            globalIndex: globalIndex,
+                            idxName: item.idxName,
+                            idx: item.idx
+                        };
+                        indexedItemsMap.set(item.idxName, newItem);
+                    }
+                } else {
+                    // Regular item: add or replace in map, preserving visibility state
+                    const existingVisible = indexedItemsMap.has(item.idxName) ? 
+                        indexedItemsMap.get(item.idxName).item.visible : item.visible;
+                    
+                    const newItem = {
+                        item: {...item, visible: existingVisible},
+                        globalIndex: globalIndex,
+                        idxName: item.idxName,
+                        idx: item.idx
+                    };
+                    
+                    indexedItemsMap.set(item.idxName, newItem);
+                }
+            }
+        });
+        
         itemsList.innerHTML = '';
         
-        actionItems.forEach((actionItem, actionIndex) => {
-            const itemElement = createActionItemElement(actionItem, actionIndex, actionItem.idx);
-            itemsList.appendChild(itemElement);
+            actionItems.forEach((actionItem, actionIndex) => {
+                // For hide/unhide items, get the processed visibility state
+                let targetVisible = undefined;
+                if ((actionItem.type === 'hide' || actionItem.type === 'unhide') && actionItem.idxName) {
+                    const targetItem = indexedItemsMap.get(actionItem.idxName);
+                    targetVisible = targetItem ? targetItem.item.visible : undefined;
+                }
+                
+                const itemElement = createActionItemElement(actionItem, actionIndex, actionItem.idx, targetVisible, indexedItemsMap);
+                itemsList.appendChild(itemElement);
+            });
+        })
+        .catch(error => {
+            console.error('[VISIBILITY_DEBUG] Error fetching preview data:', error);
+            
+            // Fallback to basic descriptions without target item lookup
+            itemsList.innerHTML = '';
+            
+            actionItems.forEach((actionItem, actionIndex) => {
+                const itemElement = createActionItemElement(actionItem, actionIndex, actionItem.idx, undefined, new Map());
+                itemsList.appendChild(itemElement);
+            });
         });
     }
     
     // Function to create action item element 
-    function createActionItemElement(actionItem, actionIndex, itemIdx) {
+    function createActionItemElement(actionItem, actionIndex, itemIdx, targetVisible, indexedItemsMap) {
         const element = document.createElement('div');
         element.className = 'item-row';
         
@@ -177,7 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Item details
         const detailsDiv = document.createElement('div');
         detailsDiv.className = 'item-details';
-        detailsDiv.textContent = getActionItemDetails(actionItem);
+        detailsDiv.textContent = getActionItemDetails(actionItem, indexedItemsMap);
         
         // Item actions
         const actionsDiv = document.createElement('div');
@@ -186,7 +285,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const editBtn = document.createElement('button');
         editBtn.className = 'btn btn-edit';
         editBtn.textContent = 'Edit';
-        editBtn.onclick = () => editActionItem(actionIndex);
+        editBtn.onclick = () => editActionItem(actionIndex, targetVisible);
         
         const removeBtn = document.createElement('button');
         removeBtn.className = 'btn btn-remove';
@@ -204,8 +303,28 @@ document.addEventListener('DOMContentLoaded', () => {
         return element;
     }
     
+    // Function to get target item description for hide/unhide actions
+    function getTargetItemDescription(targetItem) {
+        switch (targetItem.type) {
+            case 'line':
+                return `Line (${targetItem.xSize || 0}, ${targetItem.ySize || 0})`;
+            case 'rectangle':
+                return `Rectangle ${targetItem.xSize || 0}x${targetItem.ySize || 0}`;
+            case 'circle':
+                return `Circle r=${targetItem.radius || 0}`;
+            case 'arc':
+                return `Arc r=${targetItem.radius || 0}`;
+            case 'label':
+                return `Label "${truncateText(targetItem.text)}"`;
+            case 'value':
+                return `Value "${truncateText(targetItem.text)}"`;
+            default:
+                return `${targetItem.type}`;
+        }
+    }
+
     // Function to get action item details for display
-    function getActionItemDetails(item) {
+    function getActionItemDetails(item, indexedItemsMap) {
         switch (item.type) {
             case 'line':
                 return `Line: (${item.xSize || 0}, ${item.ySize || 0}) offset (${item.xOffset || 0}, ${item.yOffset || 0})`;
@@ -216,15 +335,29 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'arc':
                 return `Arc: radius ${item.radius || 0}, ${item.start || 0}° to ${(item.start || 0) + (item.angle || 0)}°`;
             case 'label':
-                return `Label: "${item.text || ''}" at (${item.xOffset || 0}, ${item.yOffset || 0})`;
+                return `Label: "${truncateText(item.text)}" at (${item.xOffset || 0}, ${item.yOffset || 0})`;
             case 'value':
-                return `Value: "${item.text || ''}" = ${item.intValue || 0}`;
+                return `Value: "${truncateText(item.text)}" = ${item.intValue || 0}`;
             case 'insertDwg':
-                return `Insert: "${item.drawingName || ''}" at (${item.xOffset || 0}, ${item.yOffset || 0})`;
+                return `Insert: "${truncateText(item.drawingName, 30)}" at (${item.xOffset || 0}, ${item.yOffset || 0})`;
             case 'hide':
-                return `Hide: idx ${item.idx || 0}`;
+                const hideTarget = indexedItemsMap.get(item.idxName);
+                console.log(`[HIDE_DESC] Looking for idxName: ${item.idxName}, found: ${hideTarget ? 'yes' : 'no'}`);
+                if (hideTarget) {
+                    const targetDetails = getTargetItemDescription(hideTarget.item);
+                    console.log(`[HIDE_DESC] Generated description: Hide: ${targetDetails}`);
+                    return ` ${targetDetails}`;
+                }
+                return ` idx ${item.idx || 0}`;
             case 'unhide':
-                return `Unhide: idx ${item.idx || 0}`;
+                const unhideTarget = indexedItemsMap.get(item.idxName);
+                console.log(`[UNHIDE_DESC] Looking for idxName: ${item.idxName}, found: ${unhideTarget ? 'yes' : 'no'}`);
+                if (unhideTarget) {
+                    const targetDetails = getTargetItemDescription(unhideTarget.item);
+                    console.log(`[UNHIDE_DESC] Generated description: Unhide: ${targetDetails}`);
+                    return ` ${targetDetails}`;
+                }
+                return ` idx ${item.idx || 0}`;
             default:
                 return `${item.type}: ${JSON.stringify(item)}`;
         }
@@ -239,10 +372,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // Function to edit an action item
-    function editActionItem(actionIndex) {
+    function editActionItem(actionIndex, targetVisible) {
         // Navigate to the touchAction item editor for editing
         let url = `/add-touchAction-item.html?tempDrawing=${encodeURIComponent(tempDrawingName)}&mode=touchAction&editIndex=${actionIndex}`;
         url += `&cmdName=${encodeURIComponent(touchZoneCmdName)}`;
+        if (targetVisible !== undefined) {
+            url += `&targetVisible=${encodeURIComponent(targetVisible)}`;
+        }
         window.location.href = url;
     }
     
