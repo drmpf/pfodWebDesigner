@@ -189,6 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let tempDrawingName = null; // Temporary drawing name for editing
     let drawingData = null; // Drawing data
     let previousItemType = null; // Track previous item type for preview update logic
+    let isFormPopulated = false; // Track if form has been populated with editing item data
     
     // Lists of existing names for uniqueness checking
     let existingIdxNames = [];
@@ -1372,6 +1373,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
         }
         
+        // Mark form as populated (prevents premature updatePreview calls in edit mode)
+        if (isEditMode) {
+            isFormPopulated = true;
+            console.log(`[EDIT_MODE] Form populated with editing item data, isFormPopulated = true`);
+        }
+        
         // Update preview after populating fields
         setTimeout(() => {
             updatePreview();
@@ -1519,6 +1526,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Skip preview update for hide/unhide/erase items in edit mode to prevent overwriting complete items
         if (isEditMode && (itemType === 'hide' || itemType === 'unhide' || itemType === 'erase')) {
             console.log(`[EDIT_MODE] Skipping preview update for ${itemType} item in edit mode to preserve existing idx/idxName`);
+            return;
+        }
+        
+        // Skip preview update if we're in edit mode and form hasn't been populated yet
+        if (isEditMode && editingItem && !isFormPopulated) {
+            console.log(`[EDIT_MODE] Skipping preview update - form not yet populated with editing item data`);
             return;
         }
         let tempItem = {
