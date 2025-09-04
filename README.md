@@ -18,6 +18,7 @@ This code may be freely used for both private and commercial use
 Provide this copyright is maintained.  
 
 # Revisions
+Version 1.1.2 fixed hiding of touchActionInput labels  
 Version 1.1.1 fixed loss of idx on edit  
 Version 1.1.0 fix hide/unhide and other general improvements  
 Version 1.0.2 fix for drag touchActions  
