@@ -59,11 +59,16 @@ function hideItemInPreview(req, res, drawings, tempEditDrawings) {
         
         if (idxName) {
             // Handle indexed items (by idxName)
-            // Find the idx by looking up the item with this idxName in the original drawing
+            // Find the idx by looking up the item with this idxName in the edit preview drawing
             let idx = null;
-            if (drawings[drawingName] && drawings[drawingName].data && drawings[drawingName].data.items) {
-                const targetItem = drawings[drawingName].data.items.find(item => item.idxName === idxName);
-                if (targetItem && targetItem.idx) {
+            if (editDrawing && editDrawing.data && editDrawing.data.items) {
+              //  console.log(`[ADD_ITEM_HIDE_DEBUG] Looking for idxName "${idxName}" in editDrawing with ${editDrawing.data.items.length} items`);
+              //  console.log(`[ADD_ITEM_HIDE_DEBUG] Items with idxName:`, editDrawing.data.items.filter(item => item.idxName).map(item => `${item.type}(idxName=${item.idxName}, idx=${item.idx})`));
+                
+                const targetItem = editDrawing.data.items.find(item => item.idxName === idxName && item.idx);
+              //  console.log(`[ADD_ITEM_HIDE_DEBUG] Found targetItem:`, targetItem ? `${targetItem.type}(idxName=${targetItem.idxName}, idx=${targetItem.idx})` : 'null');
+                
+                if (targetItem) {
                     idx = targetItem.idx;
                 }
             }
@@ -86,8 +91,8 @@ function hideItemInPreview(req, res, drawings, tempEditDrawings) {
             // Handle command items (by cmdName)
             // Find the item with this cmdName to get both cmd and cmdName
             let targetItem = null;
-            if (drawings[drawingName] && drawings[drawingName].data && drawings[drawingName].data.items) {
-                targetItem = drawings[drawingName].data.items.find(item => item.cmdName === cmdName);
+            if (editDrawing && editDrawing.data && editDrawing.data.items) {
+                targetItem = editDrawing.data.items.find(item => item.cmdName === cmdName);
             }
             
             if (!targetItem) {

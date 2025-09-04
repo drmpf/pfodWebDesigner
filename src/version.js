@@ -1,5 +1,5 @@
 // Shared constants to avoid circular dependencies
-  var JS_VERSION = "V1.1.1 -- 24th August 2025";
+  var JS_VERSION = "V1.1.2 -- 26th August 2025";
 
 // Make available globally for browser use
 if (typeof window !== 'undefined') {
