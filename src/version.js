@@ -1,5 +1,6 @@
 // Shared constants to avoid circular dependencies
-  var JS_VERSION = "V1.1.2 -- 26th August 2025";
+  var JS_VERSION = "V1.1.3 -- 9th September 2025";
+// V1.1.3 dwg updates as response received
 
 // Make available globally for browser use
 if (typeof window !== 'undefined') {

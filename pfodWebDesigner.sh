@@ -31,31 +31,6 @@ if ! command -v npm &> /dev/null; then
     exit 1
 fi
 
-# Install dependencies if node_modules doesn't exist
-if [ ! -d "node_modules" ]; then
-    echo "Installing dependencies..."
-    npm install
-    if [ $? -ne 0 ]; then
-        echo "Error installing dependencies"
-        exit 1
-    fi
-    echo "Dependencies installed successfully"
-    echo
-fi
-
-# Ensure express is installed
-echo "Checking for express..."
-npm install express
-if [ $? -ne 0 ]; then
-    echo "Warning: Could not install express"
-fi
-
-# Ensure express-session is installed
-echo "Checking for express-session..."
-npm install express-session
-if [ $? -ne 0 ]; then
-    echo "Warning: Could not install express-session"
-fi
 
 # Start the pfodWebDesigner server
 echo "Starting pfodWebDesigner server..."
