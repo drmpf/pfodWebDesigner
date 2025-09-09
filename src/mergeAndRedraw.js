@@ -161,7 +161,7 @@ class MergeAndRedraw {
         const isMouseDown = this.drawingViewer && this.drawingViewer.touchState && this.drawingViewer.touchState.isDown;
         console.log(`[MERGE_REDRAW] DEBUG Redraw check - processing: ${isProcessing}, queue: ${queueLength}, sentRequest: ${sentRequest?.drawingName || 'none'}, mouseDown: ${isMouseDown}, drawingViewer exists: ${!!this.drawingViewer}, touchState exists: ${!!(this.drawingViewer && this.drawingViewer.touchState)}`);
         
-        if (isProcessing || queueLength > 0 || sentRequest || isMouseDown) {
+        if (queueLength > 0 || sentRequest) {// || isProcessing || isMouseDown) { // removed V1.1.3
           console.log(`[MERGE_REDRAW] Skipping redraw - processing: ${isProcessing}, queue length: ${queueLength}, sentRequest: ${sentRequest?.drawingName || 'none'}, mouseDown: ${isMouseDown}`);
            return;
         }

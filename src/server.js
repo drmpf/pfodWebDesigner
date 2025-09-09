@@ -404,7 +404,11 @@ app.get('/pfodWeb', (req, res) => {
         };
     
         res.set('Content-Type', 'application/json');
-        res.send(JSON.stringify(emptyResponse));
+       // res.send(JSON.stringify(emptyResponse));
+        // Add 200ms delay for touchAction/touchActionInput requests
+        setTimeout(() => {
+            res.send(JSON.stringify(emptyResponse));
+        }, 150);  
         return;
     }
     
@@ -500,7 +504,11 @@ app.get('/pfodWebDebug', (req, res) => {
         };
     
         res.set('Content-Type', 'application/json');
-        res.send(JSON.stringify(emptyResponse));
+        //res.send(JSON.stringify(emptyResponse));
+        // Add 200ms delay for touchAction/touchActionInput requests
+        setTimeout(() => {
+            res.send(JSON.stringify(emptyResponse));
+        }, 150);
         return;
     }
     
@@ -707,7 +715,12 @@ function handlePfodWebCommand(req, res, cmdParam) {
         };
         console.log(`[PFOD_WEB] TouchZone response:`, JSON.stringify(emptyResponse));
         res.set('Content-Type', 'application/json');
-        return res.send(JSON.stringify(emptyResponse));
+        
+        // Add 200ms delay for touchAction/touchActionInput requests
+        setTimeout(() => {
+            res.send(JSON.stringify(emptyResponse));
+        }, 150);
+        return;
     }
     
     // Check if cmd matches an available drawing name (regular or temporary)
@@ -730,7 +743,11 @@ function handlePfodWebCommand(req, res, cmdParam) {
     };
     
     res.set('Content-Type', 'application/json');
-    res.send(JSON.stringify(emptyResponse));
+    
+    // Add 200ms delay for touchAction/touchActionInput requests
+    setTimeout(() => {
+        res.send(JSON.stringify(emptyResponse));
+    }, 150);
 }
 
 // Helper function to sync changes between edit preview and original drawing
