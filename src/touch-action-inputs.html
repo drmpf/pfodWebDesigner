@@ -268,7 +268,7 @@
                 
                 <div class="form-group">
                     <label for="fontsize-input">Font Size</label>
-                    <input type="number" id="fontsize-input" min="1" max="10" placeholder="2">
+                    <input type="number" id="fontsize-input" min="1" max="10" step="1" placeholder="2" oninput="this.value = Math.floor(this.value)">
                     <div class="help-text">Font size (1-10)</div>
                 </div>
                 

@@ -32,6 +32,7 @@ This code may be freely used for both private and commercial use
 Provide this copyright is maintained.  
 
 # Revisions
+Version 1.1.4 added pfodMainDrawing.h to generated output files  
 Version 1.1.3 drawing updates as response received and included dependent node packages and removed package install script from batch files  
 Version 1.1.2 fixed hiding of touchActionInput labels  
 Version 1.1.1 fixed loss of idx on edit  
