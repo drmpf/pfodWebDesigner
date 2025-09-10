@@ -282,7 +282,7 @@
                 <div class="inline-group">
                     <div class="half-width">
                         <label for="label-fontsize">Font Size:</label>
-                        <input type="number" id="label-fontsize" value="0" min="-24" max="24" step="1">
+                        <input type="number" id="label-fontsize" value="0" min="-24" max="24" step="1" oninput="this.value = Math.floor(this.value)">
                     </div>
                     <div class="half-width">
                         <label for="label-align">Alignment:</label>
@@ -352,7 +352,7 @@
                 <div class="inline-group">
                     <div class="half-width">
                         <label for="value-fontsize">Font Size:</label>
-                        <input type="number" id="value-fontsize" value="0" min="-24" max="24" step="1">
+                        <input type="number" id="value-fontsize" value="0" min="-24" max="24" step="1" oninput="this.value = Math.floor(this.value)">
                     </div>
                     <div class="half-width">
                         <label for="value-align">Alignment:</label>

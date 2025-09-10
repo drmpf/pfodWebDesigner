@@ -23,33 +23,6 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-:: Install dependencies if node_modules doesn't exist
-if not exist node_modules (
-    echo Installing dependencies...
-    call npm install
-    if %ERRORLEVEL% NEQ 0 (
-        echo Error installing dependencies
-        pause
-        exit /b 1
-    )
-    echo Dependencies installed successfully
-    echo.
-)
-
-:: Ensure express-session is installed
-echo Checking for express...
-call npm install express
-if %ERRORLEVEL% NEQ 0 (
-    echo Warning: Could not install express-session
-)
-
-:: Ensure express-session is installed
-echo Checking for express-session...
-call npm install express-session
-if %ERRORLEVEL% NEQ 0 (
-    echo Warning: Could not install express-session
-)
-
 ::Start the pfodWebDesigner server
 echo Starting pfodWebDesigner server...
 echo The server will automatically find an available port, starting with 3000
