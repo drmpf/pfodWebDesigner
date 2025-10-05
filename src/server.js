@@ -2358,11 +2358,10 @@ app.get('/api/drawings/:drawingName/export', (req, res) => {
         // Get the full drawing data
         const drawingData = drawings[drawingName].data;
         
-        // Create a copy of the drawing data and add pfodDrawing: "start" and js_ver as the first entries to exactly match what is sent to the viewer
-        // Omit the name property as it's inferred from the filename
-        const { name, version, ...rest } = drawingData;
+        // Create a copy of the drawing data and include the name property in the export
+        const { version, ...rest } = drawingData;
         const exportData = {
-            pfodDrawing: "start",
+            name: drawingName,
             js_ver: JS_VERSION,
             version,
             ...rest

@@ -799,16 +799,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     // Parse JSON data
                     let drawingData = JSON.parse(event.target.result);
-                    
-                    // Infer drawing name from filename (remove .json extension and parenthetical numbers)
-                    const drawingName = file.name.replace(/\.json$/i, '').replace(/\s*\(\d+\)$/, '').replace(/_unloaded$/i, '');;
-                    if (!drawingName) {
-                        alert('Invalid filename: Cannot determine drawing name');
-                        return;
+
+                    // Use the name from JSON data, fall back to filename if not available
+                    if (!drawingData.name) {
+                        // Fallback: infer drawing name from filename (remove .json extension and parenthetical numbers)
+                        const drawingName = file.name.replace(/\.json$/i, '').replace(/\s*\(\d+\)$/, '').replace(/_unloaded$/i, '');
+                        if (!drawingName) {
+                            alert('Invalid file: Cannot determine drawing name from JSON data or filename');
+                            return;
+                        }
+                        drawingData.name = drawingName;
                     }
-                    
-                    // Set the drawing name from the filename
-                    drawingData.name = drawingName;
                     
                     if (drawingData.x === undefined || drawingData.y === undefined || drawingData.color === undefined) {
                         const missing = [];
@@ -907,6 +908,267 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
+    // Helper function to prompt user to load missing drawings via file selection
+    function promptUserToLoadMissingDrawings(missingDrawings, currentDrawingName, callback) {
+        let loadedDrawings = [];
+        let stillMissingDrawings = [...missingDrawings];
+        let currentIndex = 0;
+        
+        if (missingDrawings.length === 0) {
+            callback(loadedDrawings, stillMissingDrawings);
+            return;
+        }
+        
+        console.log(`Prompting user to load ${missingDrawings.length} missing drawings...`);
+        
+        // Function to prompt for the next missing drawing
+        function promptForNextDrawing() {
+            if (currentIndex >= missingDrawings.length) {
+                // All drawings have been processed
+                console.log(`User load prompts completed. Loaded: ${loadedDrawings.length}, Still missing: ${stillMissingDrawings.length}`);
+                callback(loadedDrawings, stillMissingDrawings);
+                return;
+            }
+            
+            const missingDrawingName = missingDrawings[currentIndex];
+            const expectedFilename = `${missingDrawingName}.json`;
+            
+            console.log(`Prompting user for missing drawing: ${missingDrawingName}`);
+            
+            // Create a temporary file input for this specific missing drawing
+            const tempFileInput = document.createElement('input');
+            tempFileInput.type = 'file';
+            tempFileInput.accept = '.json';
+            tempFileInput.style.display = 'none';
+            
+            tempFileInput.addEventListener('change', function(event) {
+                if (event.target.files.length > 0) {
+                    const selectedFile = event.target.files[0];
+                    console.log(`User selected file: ${selectedFile.name} for missing drawing: ${missingDrawingName}`);
+                    
+                    // Load the selected file
+                    loadDrawingFromFileForMissing(selectedFile, missingDrawingName, function(success) {
+                        if (success) {
+                            loadedDrawings.push(missingDrawingName);
+                            stillMissingDrawings = stillMissingDrawings.filter(name => name !== missingDrawingName);
+                        }
+                        
+                        // Remove the temporary file input
+                        document.body.removeChild(tempFileInput);
+                        
+                        // Move to next missing drawing
+                        currentIndex++;
+                        promptForNextDrawing();
+                    });
+                } else {
+                    // No file selected, skip this drawing
+                    console.log(`No file selected for ${missingDrawingName}`);
+                    document.body.removeChild(tempFileInput);
+                    currentIndex++;
+                    promptForNextDrawing();
+                }
+            });
+            
+            // Create a custom styled dialog instead of confirm for better visibility
+            const dialogDiv = document.createElement('div');
+            dialogDiv.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: white;
+                border: 3px solid #333;
+                border-radius: 10px;
+                padding: 40px;
+                box-shadow: 0 0 20px rgba(0,0,0,0.5);
+                z-index: 10000;
+                font-family: Arial, sans-serif;
+                font-size: 18px;
+                line-height: 1.4;
+                text-align: center;
+                min-width: 600px;
+                max-width: 800px;
+            `;
+            
+            dialogDiv.innerHTML = `
+                <div style="margin-bottom: 30px; font-weight: bold; color: #d9534f;">
+                    Missing Drawing Reference
+                </div>
+                <div style="margin-bottom: 30px;">
+                    The drawing "<strong>${currentDrawingName}</strong>" references "<strong>${missingDrawingName}</strong>" which is not loaded.
+                </div>
+                <div style="margin-bottom: 40px;">
+                    Would you like to select and load "<strong>${expectedFilename}</strong>" now?
+                </div>
+                <div>
+                    <button id="load-btn" style="font-size: 24px; padding: 15px 30px; margin: 0 15px; background: #5cb85c; color: white; border: none; border-radius: 5px; cursor: pointer;">Load File</button>
+                    <button id="skip-btn" style="font-size: 24px; padding: 15px 30px; margin: 0 15px; background: #d9534f; color: white; border: none; border-radius: 5px; cursor: pointer;">Skip</button>
+                </div>
+            `;
+            
+            // Add overlay
+            const overlay = document.createElement('div');
+            overlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.5);
+                z-index: 9999;
+            `;
+            
+            document.body.appendChild(overlay);
+            document.body.appendChild(dialogDiv);
+            
+            // Handle button clicks
+            const loadBtn = dialogDiv.querySelector('#load-btn');
+            const skipBtn = dialogDiv.querySelector('#skip-btn');
+            
+            loadBtn.addEventListener('click', function() {
+                // Remove dialog and overlay
+                document.body.removeChild(dialogDiv);
+                document.body.removeChild(overlay);
+                
+                // Add to document and trigger click immediately while user activation is still valid
+                document.body.appendChild(tempFileInput);
+                console.log(`Triggering file picker for ${missingDrawingName}`);
+                
+                // Track if file was selected or dialog cancelled
+                let dialogHandled = false;
+                
+                // Listen for window focus to detect when user returns from file dialog
+                const handleFocusReturn = function() {
+                    setTimeout(function() {
+                        if (!dialogHandled) {
+                            console.log(`File dialog closed without selection for ${missingDrawingName} - continuing`);
+                            dialogHandled = true;
+                            if (document.body.contains(tempFileInput)) {
+                                document.body.removeChild(tempFileInput);
+                            }
+                            currentIndex++;
+                            promptForNextDrawing();
+                        }
+                    }, 100); // Small delay to let change event fire if file was selected
+                    window.removeEventListener('focus', handleFocusReturn);
+                };
+                
+                // Override the change event to mark as handled
+                const originalChangeHandler = tempFileInput.onchange;
+                tempFileInput.addEventListener('change', function(event) {
+                    dialogHandled = true;
+                    window.removeEventListener('focus', handleFocusReturn);
+                });
+                
+                window.addEventListener('focus', handleFocusReturn);
+                tempFileInput.click();
+            });
+            
+            skipBtn.addEventListener('click', function() {
+                // Remove dialog and overlay
+                document.body.removeChild(dialogDiv);
+                document.body.removeChild(overlay);
+                
+                console.log(`User skipped loading ${missingDrawingName}`);
+                currentIndex++;
+                promptForNextDrawing();
+            });
+        }
+        
+        // Start the prompting process
+        promptForNextDrawing();
+    }
+    
+    // Helper function to load a drawing from a file for a missing drawing
+    function loadDrawingFromFileForMissing(file, expectedDrawingName, callback) {
+        if (!file) {
+            callback(false);
+            return;
+        }
+        
+        console.log(`Loading file ${file.name} for missing drawing ${expectedDrawingName}`);
+        
+        const reader = new FileReader();
+        
+        reader.onload = function(event) {
+            try {
+                let drawingData = JSON.parse(event.target.result);
+                
+                // Set the expected drawing name
+                drawingData.name = expectedDrawingName;
+                
+                console.log(`Parsed drawing data for missing drawing "${expectedDrawingName}"`);
+                
+                // Validate required properties
+                if (drawingData.x === undefined || drawingData.y === undefined || drawingData.color === undefined) {
+                    const missing = [];
+                    if (drawingData.x === undefined) missing.push('x (width)');
+                    if (drawingData.y === undefined) missing.push('y (height)');
+                    if (drawingData.color === undefined) missing.push('color (background)');
+                    alert(`Invalid JSON file for "${expectedDrawingName}": Missing required properties: ${missing.join(', ')}`);
+                    callback(false);
+                    return;
+                }
+                
+                // Check if this is a raw_item format and convert if needed
+                if (drawingData.raw_items && Array.isArray(drawingData.raw_items)) {
+                    console.log(`Converting raw_items format for ${expectedDrawingName}...`);
+                    try {
+                        drawingData = translateRawItemsToItemArray(drawingData);
+                    } catch (translationError) {
+                        console.error(`Error translating raw_items for ${expectedDrawingName}:`, translationError);
+                        alert(`Failed to translate raw_items format for "${expectedDrawingName}". See console for details.`);
+                        callback(false);
+                        return;
+                    }
+                }
+                
+                // Import to server
+                importDrawingToServerForMissing(drawingData, callback);
+                
+            } catch (parseError) {
+                console.error(`Error parsing JSON file for ${expectedDrawingName}:`, parseError);
+                alert(`Invalid JSON file for "${expectedDrawingName}". See console for details.`);
+                callback(false);
+            }
+        };
+        
+        reader.onerror = function() {
+            console.error(`Error reading file for ${expectedDrawingName}`);
+            alert(`Failed to read file for "${expectedDrawingName}".`);
+            callback(false);
+        };
+        
+        reader.readAsText(file);
+    }
+    
+    // Helper function to import a missing drawing to the server
+    function importDrawingToServerForMissing(drawingData, callback) {
+        fetch('/api/drawings/import', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(drawingData)
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                console.log(`Successfully imported missing drawing "${drawingData.name}"`);
+                callback(true);
+            } else {
+                console.error(`Failed to import missing drawing "${drawingData.name}":`, result.error);
+                alert(`Failed to import "${drawingData.name}": ${result.error || 'Unknown error'}`);
+                callback(false);
+            }
+        })
+        .catch(error => {
+            console.error(`Error importing missing drawing "${drawingData.name}":`, error);
+            alert(`Failed to import "${drawingData.name}". See console for details.`);
+            callback(false);
+        });
+    }
+    
     // Helper function to check for missing inserted drawings in JSON data
     function checkForMissingInsertedDrawings(drawingData, callback) {
         // First, check if the drawing has insertDwg items
@@ -952,12 +1214,82 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
                 
-                // Alert the user about missing drawings
-                const warningMessage = `The drawing "${drawingData.name}" includes references to ${missingDrawings.length} drawing(s) that don't exist on the server: ${missingDrawings.join(', ')}.\n\nYou should import these drawings as well for the insertDwg items to work properly.`;
-                alert(warningMessage);
+                console.log(`Found ${missingDrawings.length} missing drawings: ${missingDrawings.join(', ')}`);
+                console.log('Prompting user to load missing drawings...');
                 
-                // Proceed with the import anyway
-                callback();
+                // Prompt user to load missing drawings via file selection
+                promptUserToLoadMissingDrawings(missingDrawings, drawingData.name, function(loadedDrawings, stillMissingDrawings) {
+                    if (stillMissingDrawings.length === 0) {
+                        console.log('All missing drawings were successfully loaded by user.');
+                        callback();
+                        return;
+                    }
+                    
+                    // Create a custom large dialog for final warning about unloaded drawings
+                    const warningDialogDiv = document.createElement('div');
+                    warningDialogDiv.style.cssText = `
+                        position: fixed;
+                        top: 50%;
+                        left: 50%;
+                        transform: translate(-50%, -50%);
+                        background: white;
+                        border: 3px solid #f0ad4e;
+                        border-radius: 10px;
+                        padding: 40px;
+                        box-shadow: 0 0 20px rgba(0,0,0,0.5);
+                        z-index: 10000;
+                        font-family: Arial, sans-serif;
+                        font-size: 18px;
+                        line-height: 1.4;
+                        text-align: center;
+                        min-width: 600px;
+                        max-width: 800px;
+                    `;
+                    
+                    warningDialogDiv.innerHTML = `
+                        <div style="margin-bottom: 30px; font-weight: bold; color: #f0ad4e; font-size: 24px;">
+                            ⚠️ Unloaded Drawing References
+                        </div>
+                        <div style="margin-bottom: 30px;">
+                            The drawing "<strong>${drawingData.name}</strong>" still has references to <strong>${stillMissingDrawings.length}</strong> drawing(s) that were not loaded:
+                        </div>
+                        <div style="margin-bottom: 30px; color: #d9534f; font-weight: bold;">
+                            ${stillMissingDrawings.join(', ')}
+                        </div>
+                        <div style="margin-bottom: 40px;">
+                            These insertDwg items may not display correctly until the referenced drawings are imported.
+                        </div>
+                        <div>
+                            <button id="warning-ok-btn" style="font-size: 24px; padding: 15px 30px; background: #5bc0de; color: white; border: none; border-radius: 5px; cursor: pointer;">OK</button>
+                        </div>
+                    `;
+                    
+                    // Add overlay
+                    const warningOverlay = document.createElement('div');
+                    warningOverlay.style.cssText = `
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        width: 100%;
+                        height: 100%;
+                        background: rgba(0,0,0,0.5);
+                        z-index: 9999;
+                    `;
+                    
+                    document.body.appendChild(warningOverlay);
+                    document.body.appendChild(warningDialogDiv);
+                    
+                    // Handle OK button click
+                    const warningOkBtn = warningDialogDiv.querySelector('#warning-ok-btn');
+                    warningOkBtn.addEventListener('click', function() {
+                        // Remove dialog and overlay
+                        document.body.removeChild(warningDialogDiv);
+                        document.body.removeChild(warningOverlay);
+                    });
+                    
+                    // Proceed with the import anyway
+                    callback();
+                });
             })
             .catch(error => {
                 console.error('Error checking for missing drawings:', error);
