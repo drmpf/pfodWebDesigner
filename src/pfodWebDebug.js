@@ -17,14 +17,39 @@
 
 // DrawingViewer class to encapsulate all viewer functionality
 class DrawingViewer {
-  constructor() {
+  constructor(options = {}) {
     console.log('[PFODWEB_DEBUG] DrawingViewer constructor called - NEW INSTANCE CREATED');
     console.log('[PFODWEB_DEBUG] URL:', window.location.href);
     console.log('[PFODWEB_DEBUG] Referrer:', document.referrer);
+    console.log('[PFODWEB_DEBUG] Constructor options:', options);
 
-    // Extract target IP from URL or global variable
-    this.targetIP = this.extractTargetIP();
-    console.log('[PFODWEB_DEBUG] Target IP:', this.targetIP);
+    // Check if we have a pre-connected ConnectionManager from connectWithPrompt
+    if (window.pfodConnectionManager) {
+      console.log('[PFODWEB_DEBUG] Using pre-connected ConnectionManager from connectWithPrompt');
+      // Use the existing ConnectionManager directly - it already has all protocol info and connection details
+      this.connectionManager = window.pfodConnectionManager;
+      this.protocol = this.connectionManager.protocol;
+      this.targetIP = this.connectionManager.config?.targetIP || null;
+      this.baudRate = this.connectionManager.config?.baudRate || 115200;
+      console.log('[PFODWEB_DEBUG] Set protocol from ConnectionManager:', this.protocol);
+      // Keep the global for error messages - will be cleared on page reload
+    } else {
+      // Extract protocol, target IP, and baud rate from URL parameters (fallback for HTTP with targetIP in URL)
+      this.protocol = this.extractProtocol();
+      this.targetIP = this.extractTargetIP();
+      this.baudRate = this.extractBaudRate();
+      console.log('[PFODWEB_DEBUG] Protocol:', this.protocol);
+      console.log('[PFODWEB_DEBUG] Target IP:', this.targetIP);
+      console.log('[PFODWEB_DEBUG] Baud Rate:', this.baudRate);
+
+      // Initialize ConnectionManager with selected protocol
+      this.connectionManager = new ConnectionManager({
+        protocol: this.protocol,
+        targetIP: this.targetIP,
+        baudRate: this.baudRate
+      });
+    }
+    console.log('[PFODWEB_DEBUG] ConnectionManager initialized with protocol:', this.protocol);
 
     // DOM Elements
     this.canvas = document.getElementById('drawing-canvas');
@@ -34,7 +59,7 @@ class DrawingViewer {
     // Application State - each viewer has its own isolated state
     this.updateTimer = null;
     this.isUpdating = false; // Start with updates disabled until first load completes
-    this.js_ver = JS_VERSION; // Client JavaScript version
+    this.js_ver = window.JS_VERSION; // Client JavaScript version
 
     // Request queue system - isolated per viewer
     this.requestQueue = [];
@@ -43,7 +68,8 @@ class DrawingViewer {
     console.log(`[SENTREQUEST] CLEARED: on creation`);
     this.sentRequest = null; // Currently in-flight request
     this.currentRetryCount = 0;
-    this.MAX_RETRIES = 5;
+    // MAX_RETRIES will be set based on connection manager's protocol
+    // It's accessed dynamically via this.connectionManager.getMaxRetries()
 
     // Request tracking for touch vs insertDwg - isolated per viewer
     this.requestTracker = {
@@ -123,8 +149,75 @@ class DrawingViewer {
     // Create DrawingDataProcessor instance for this viewer
     this.drawingDataProcessor = new window.DrawingDataProcessor(this);
 
+    // Initialize Message Collector and Viewer
+    this.initializeMessageViewer();
+
     // Set up event listeners using pfodWebMouse.js
     this.setupEventListeners();
+  }
+
+  /**
+   * Initialize message collector and raw message viewer
+   */
+  initializeMessageViewer() {
+    try {
+      // Skip message viewer and collector initialization if designer parameter is present
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.has('designer')) {
+        console.log('[PFODWEB_DEBUG] Designer mode detected - skipping message viewer and collector initialization');
+        return;
+      }
+
+      // Create message collector if not already created
+      if (!window.messageCollector) {
+        window.messageCollector = new MessageCollector(500);
+        ConnectionManager.setMessageCollector(window.messageCollector);
+        console.log('[PFODWEB_DEBUG] Message collector created and set on ConnectionManager');
+      }
+
+      // Create raw message viewer
+      window.rawMessageViewer = new RawMessageViewer(window.messageCollector, 'raw-message-viewer');
+      window.rawMessageViewer.initialize();
+      console.log('[PFODWEB_DEBUG] Raw message viewer initialized');
+
+      // Add a keyboard shortcut to toggle the viewer (Ctrl+Shift+M)
+      document.addEventListener('keydown', (event) => {
+        if (event.ctrlKey && event.shiftKey && event.key === 'M') {
+          event.preventDefault();
+          if (window.rawMessageViewer) {
+            window.rawMessageViewer.toggle();
+          }
+        }
+      });
+      console.log('[PFODWEB_DEBUG] Keyboard shortcut Ctrl+Shift+M added to toggle message viewer');
+    } catch (error) {
+      console.error('[PFODWEB_DEBUG] Error initializing message viewer:', error);
+    }
+  }
+
+  // Extract protocol from URL parameters
+  extractProtocol() {
+    console.log(`[PROTOCOL] Extracting protocol from URL parameters`);
+    console.log(`[PROTOCOL] window.location.search: ${window.location.search}`);
+
+    // Infer protocol from parameter presence
+    const urlParams = new URLSearchParams(window.location.search);
+
+    // Check for protocol-specific parameters
+    if (urlParams.has('serial')) {
+      console.log(`[PROTOCOL] Found 'serial' parameter - using Serial protocol`);
+      return 'serial';
+    } else if (urlParams.has('ble')) {
+      console.log(`[PROTOCOL] Found 'ble' parameter - using BLE protocol`);
+      return 'ble';
+    } else if (urlParams.has('targetIP')) {
+      console.log(`[PROTOCOL] Found 'targetIP' parameter - using HTTP protocol`);
+      return 'http';
+    }
+
+    // Default to HTTP if not specified
+    console.log(`[PROTOCOL] No protocol-specific parameters found, defaulting to 'http'`);
+    return 'http';
   }
 
   // Extract target IP address from URL parameters or global variable
@@ -167,6 +260,53 @@ class DrawingViewer {
 
     console.log(`[TARGET_IP] No valid target IP found, returning null`);
     return null;
+  }
+
+  // Extract baud rate from URL parameters
+  extractBaudRate() {
+    console.log(`[BAUD_RATE] Extracting baud rate from URL parameters`);
+    console.log(`[BAUD_RATE] window.location.search: ${window.location.search}`);
+
+    // Extract from URL parameters - can be ?serial=115200 or standalone ?baudRate=115200
+    const urlParams = new URLSearchParams(window.location.search);
+
+    // First check if serial parameter has a value (e.g., ?serial=115200)
+    const serialValue = urlParams.get('serial');
+    console.log(`[BAUD_RATE] URL parameter serial: ${serialValue}`);
+
+    if (serialValue && serialValue !== '') {
+      // Parse and validate baud rate from serial parameter value
+      const parsedBaudRate = parseInt(serialValue, 10);
+      const validBaudRates = [9600, 19200, 38400, 57600, 74880, 115200];
+
+      if (validBaudRates.includes(parsedBaudRate)) {
+        console.log(`[BAUD_RATE] Valid baud rate found in serial parameter: ${parsedBaudRate}`);
+        return parsedBaudRate;
+      } else {
+        console.log(`[BAUD_RATE] Invalid baud rate in serial parameter: ${serialValue}, defaulting to 115200`);
+      }
+    }
+
+    // Fallback to baudRate parameter (for backwards compatibility)
+    const baudRate = urlParams.get('baudRate');
+    console.log(`[BAUD_RATE] URL parameter baudRate: ${baudRate}`);
+
+    if (baudRate) {
+      // Parse and validate baud rate
+      const parsedBaudRate = parseInt(baudRate, 10);
+      const validBaudRates = [9600, 19200, 38400, 57600, 74880, 115200];
+
+      if (validBaudRates.includes(parsedBaudRate)) {
+        console.log(`[BAUD_RATE] Valid baud rate found: ${parsedBaudRate}`);
+        return parsedBaudRate;
+      } else {
+        console.log(`[BAUD_RATE] Invalid baud rate: ${baudRate}, defaulting to 9600`);
+      }
+    }
+
+    // Default to 115200 if not specified or invalid
+    console.log(`[BAUD_RATE] No valid baud rate found, defaulting to 115200`);
+    return 115200;
   }
 
   // Build endpoint URL with target IP
@@ -297,19 +437,165 @@ class DrawingViewer {
     } else {
       console.error('pfodWebMouse.js not loaded - mouse events will not work');
     }
+
+    // Setup context menu for right-click access to message viewer
+    this.setupContextMenu();
+  }
+
+  /**
+   * Setup right-click context menu
+   */
+  setupContextMenu() {
+    // Skip context menu setup if designer parameter is present
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('designer')) {
+      console.log('[PFODWEB_DEBUG] Designer mode detected - skipping context menu setup');
+      return;
+    }
+
+    const canvas = document.getElementById('drawing-canvas');
+    if (!canvas) {
+      console.warn('[CONTEXT_MENU] Canvas not found');
+      return;
+    }
+
+    // Create context menu container
+    const contextMenu = document.createElement('div');
+    contextMenu.id = 'pfod-context-menu';
+    contextMenu.style.cssText = `
+      display: none;
+      position: fixed;
+      background-color: #2d2d30;
+      border: 1px solid #555;
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      z-index: 10000;
+      min-width: 200px;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      font-size: 12px;
+    `;
+
+    contextMenu.innerHTML = `
+      <div class="pfod-context-menu-item" data-action="show-messages">
+        <span style="color: #ce9178; margin-right: 8px;">📊</span>
+        Show Raw Messages
+        <span style="color: #858585; margin-left: auto; margin-left: 20px; font-size: 10px;">Ctrl+Shift+M</span>
+      </div>
+    `;
+
+    // Add styles for menu items
+    const style = document.createElement('style');
+    style.textContent = `
+      .pfod-context-menu-item {
+        padding: 8px 12px;
+        color: #d4d4d4;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        user-select: none;
+        transition: background-color 0.15s;
+      }
+
+      .pfod-context-menu-item:hover {
+        background-color: #3e3e42;
+      }
+
+      .pfod-context-menu-item:active {
+        background-color: #454545;
+      }
+
+      .pfod-context-menu-divider {
+        height: 1px;
+        background-color: #3e3e42;
+        margin: 4px 0;
+      }
+    `;
+    document.head.appendChild(style);
+    document.body.appendChild(contextMenu);
+
+    // Handle right-click on canvas
+    canvas.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      this.showContextMenu(event.clientX, event.clientY, contextMenu);
+    });
+
+    // Close menu on document click
+    document.addEventListener('click', (event) => {
+      if (event.target.closest('#pfod-context-menu')) {
+        return; // Don't close if clicking menu
+      }
+      contextMenu.style.display = 'none';
+    });
+
+    // Handle menu item clicks
+    contextMenu.addEventListener('click', (event) => {
+      const item = event.target.closest('.pfod-context-menu-item');
+      if (!item) return;
+
+      const action = item.dataset.action;
+      contextMenu.style.display = 'none';
+
+      switch (action) {
+        case 'show-messages':
+          if (window.rawMessageViewer) {
+            window.rawMessageViewer.show();
+            console.log('[CONTEXT_MENU] Opened message viewer');
+          }
+          break;
+        case 'clear-messages':
+          if (window.messageCollector) {
+            window.messageCollector.clear();
+            console.log('[CONTEXT_MENU] Cleared all messages');
+          }
+          break;
+        case 'export-json':
+          if (window.rawMessageViewer) {
+            window.rawMessageViewer.exportJSON();
+            console.log('[CONTEXT_MENU] Exported messages as JSON');
+          }
+          break;
+        case 'export-csv':
+          if (window.rawMessageViewer) {
+            window.rawMessageViewer.exportCSV();
+            console.log('[CONTEXT_MENU] Exported messages as CSV');
+          }
+          break;
+      }
+    });
+
+    console.log('[CONTEXT_MENU] Context menu setup complete');
+  }
+
+  /**
+   * Show context menu at specified position
+   */
+  showContextMenu(x, y, menu) {
+    menu.style.display = 'block';
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+
+    // Adjust if menu goes off-screen
+    const rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) {
+      menu.style.left = (window.innerWidth - rect.width - 10) + 'px';
+    }
+    if (rect.bottom > window.innerHeight) {
+      menu.style.top = (window.innerHeight - rect.height - 10) + 'px';
+    }
+
+    console.log('[CONTEXT_MENU] Showing at', x, y);
   }
 
   // Queue initial request using existing request queue system
   queueInitialRequest() {
     const startupCmd = '{.}';
-    const endpoint = `/pfodWeb?cmd=${encodeURIComponent(startupCmd)}`;
 
     console.log('Sending {.} request without version to get drawing name from server via session context');
-    console.log(`Queueing initial request: ${endpoint}`);
+    console.log(`Queueing initial request with command: ${startupCmd}`);
 
     // Add to request queue with mainMenu type - not a drawing request
     const requestType = 'mainMenu';
-    this.addToRequestQueue(null, endpoint, null, null, requestType);
+    this.addToRequestQueue(null, startupCmd, null, null, requestType);
   }
 
   // Update page title to include main drawing name
@@ -341,23 +627,19 @@ class DrawingViewer {
       const savedVersion = localStorage.getItem(`${currentDrawingName}_version`);
       const savedData = localStorage.getItem(`${currentDrawingName}_data`);
 
-      let endpoint = `/pfodWeb`;
-      // Add version query parameter only if we have both version and data
-      if (savedVersion) { // && savedData) {
-        // Use /pfodWeb endpoint with cmd parameter in {drawingName} format
-        endpoint += `?cmd=${encodeURIComponent('{' + savedVersion+ ':'+ currentDrawingName + '}')}`;
-        endpoint += `&version=${encodeURIComponent(savedVersion)}`; // add this as well for control server
+      let cmd;
+      if (savedVersion) {
+        cmd = '{' + savedVersion+ ':'+ currentDrawingName + '}';
         console.log(`Using saved version: ${savedVersion}`);
       } else {
         console.log('No valid saved version+data pair - requesting fresh data (dwg:start)');
-        // Use /pfodWeb endpoint with cmd parameter in {drawingName} format
-        endpoint += `?cmd=${encodeURIComponent('{' + currentDrawingName + '}')}`;
+        cmd = '{' + currentDrawingName + '}';
       }
 
-      console.log(`Requesting drawing data: ${endpoint}`);
+      console.log(`Requesting drawing with command: ${cmd}`);
 
       // Add main drawing request to the queue
-      this.addToRequestQueue(currentDrawingName, endpoint, null, null, 'main');
+      this.addToRequestQueue(currentDrawingName, cmd, null, null, 'main');
     } catch (error) {
       console.error('Failed to load drawing:', error);
       this.isUpdating = true; // Re-enable updates even if loading failed
@@ -478,9 +760,9 @@ class DrawingViewer {
   }
 
   // Add a request to the queue
-  addToRequestQueue(drawingName, endpoint, options, touchZoneInfo, requestType = 'unknown') {
+  addToRequestQueue(drawingName, cmd, options, touchZoneInfo, requestType = 'unknown') {
     console.warn(`[QUEUE] Adding request for "${drawingName}" to queue (type: ${requestType})`);
-    console.log(`[QUEUE] Endpoint "${endpoint}"`);
+    console.log(`[QUEUE] Command "${cmd}"`);
     console.log(`[QUEUE] Current shadow processing type: ${this.shadowProcessing.requestType}`);
     console.log(`[QUEUE] Queue length before add: ${this.requestQueue.length}, sentRequest: ${this.sentRequest ? this.sentRequest.drawingName + '(' + this.sentRequest.requestType + ')' : 'null'}`);
     if (requestType == 'unknown') {
@@ -532,14 +814,9 @@ class DrawingViewer {
       });
     }
 
-    // Always use buildFetchOptions for consistent CORS handling
-    const finalOptions = this.buildFetchOptions();
-    console.log(`[QUEUE] Using buildFetchOptions for consistent CORS handling`);
-    
     this.requestQueue.push({
       drawingName: drawingName,
-      endpoint: endpoint,
-      options: finalOptions,
+      cmd: cmd,
       retryCount: 0,
       touchZoneInfo: touchZoneInfo,
       requestType: requestType
@@ -593,23 +870,39 @@ class DrawingViewer {
     }
 
     // Check if server response includes version information
-    const serverVersion = data.version;
+    let serverVersion = data.version;
     let storedVersion = null;
+    let hasStoredData = false;
 
     // Get stored version for this drawing using DrawingManager
     if (this.shadowProcessing.shadowDrawingManager) {
       storedVersion = this.shadowProcessing.shadowDrawingManager.getStoredVersion(drawingName);
+      // Check if we actually have saved data for this drawing (not just the version)
+      hasStoredData = this.shadowProcessing.shadowDrawingManager.drawingsData[drawingName]?.data ? true : false;
     }
 
-    // Build the drawing request endpoint
-    let drawingEndpoint = `/pfodWeb?cmd=${encodeURIComponent('{' + drawingName + '}')}`;
+    // For updates without version info (like {;), assume version hasn't changed
+    // Use stored version as fallback ONLY if we have actual stored data
+    if (!serverVersion && storedVersion && hasStoredData) {
+      serverVersion = storedVersion;
+      console.log(`[QUEUE] No version in update - using stored version: ${storedVersion}`);
+    }
 
-    // Include version in request only if we have stored version that matches server version
-    if (storedVersion && serverVersion && storedVersion === serverVersion) {
-      drawingEndpoint += `&version=${encodeURIComponent(storedVersion)}`;
-      console.log(`[QUEUE] Version match: Including version ${storedVersion} in {${drawingName}} request`);
+    // Build the command string for the drawing request
+    let drawingCmd;
+    // Include version in command only if:
+    // 1. We have actual stored data for this drawing
+    // 2. We have a stored version that matches server version
+    if (hasStoredData && storedVersion && serverVersion && storedVersion === serverVersion) {
+      drawingCmd = '{' + storedVersion + ':' + drawingName + '}';
+      console.log(`[QUEUE] Version match with stored data: Including version ${storedVersion} in {${drawingName}} request`);
     } else {
-      console.log(`[QUEUE] Version mismatch or no stored version: Sending {${drawingName}} without version (stored: ${storedVersion}, server: ${serverVersion})`);
+      drawingCmd = '{' + drawingName + '}';
+      if (!hasStoredData) {
+        console.log(`[QUEUE] No stored data for ${drawingName} - requesting initial data without version`);
+      } else {
+        console.log(`[QUEUE] Version mismatch or no stored version: Sending {${drawingName}} without version (stored: ${storedVersion}, server: ${serverVersion})`);
+      }
     }
 
     // Queue the actual drawing request from main menu - add as first drawing and use 'main' requestType
@@ -618,7 +911,7 @@ class DrawingViewer {
     if (!this.shadowProcessing.shadowDrawingManager.drawings.includes(drawingName)) {
       this.shadowProcessing.shadowDrawingManager.drawings.unshift(drawingName);
     }
-    this.addToRequestQueue(drawingName, drawingEndpoint, request.options, null, 'main');
+    this.addToRequestQueue(drawingName, drawingCmd, request.options, null, 'main');
     console.log(`[QUEUE] Processed drawing menu item ${cmd}`);
     return true;
   }
@@ -687,11 +980,11 @@ class DrawingViewer {
       console.error('[QUEUE] Error: requestQueue is undefined. Aborting queue processing.');
       return;
     }
-    if (this.sentRequest) {
-      console.log(`[QUEUE] processRequestQueue have sentRequest, queue length: ${this.requestQueue.length}`);
-    } else {
-      console.log(`[QUEUE] processRequestQueue no sentRequest, queue length: ${this.requestQueue.length}`);
-    }       
+    //if (this.sentRequest) {
+    //  console.log(`[QUEUE] processRequestQueue have sentRequest, queue length: ${this.requestQueue.length}`);
+    //} else {
+    //  console.log(`[QUEUE] processRequestQueue no sentRequest, queue length: ${this.requestQueue.length}`);
+    //}       
     // Try to atomically set processing state from false to true
 //    if (!this.trySetProcessingQueue(false, true)) {
 //      console.log(`[QUEUE] Already processing queue - skipping`);
@@ -701,24 +994,24 @@ class DrawingViewer {
     // Return early if there's already a request in flight or queue is empty
     if (this.sentRequest || this.requestQueue.length === 0) {
       if (this.sentRequest) {
-        console.log(`[QUEUE] Request already in flight for "${this.sentRequest.drawingName}" - waiting`);
+        //console.log(`[QUEUE] Request already in flight for "${this.sentRequest.drawingName}" - waiting`);
       }
       // Reset processing state before returning
       if (this.sentRequest) {
         this.setProcessingQueue(true);
       } else {
-        console.log(`[QUEUE] NO sentRequest and queue empty`);
+        //console.log(`[QUEUE] NO sentRequest and queue empty`);
         this.setProcessingQueue(false);
 
         // Only redraw if shadow processing is not active - check inUse flag
         if (!this.shadowProcessing.shadowDrawingManager.inUse) {
-            console.log(`[QUEUE] No shadow processing active - calling redrawCanvas for final display`);
+            //console.log(`[QUEUE] No shadow processing active - calling redrawCanvas for final display`);
             setTimeout(() => {
                 this.redrawCanvas();
                 this.scheduleNextUpdate();
             }, 10);
         } else {
-            console.log(`[QUEUE] Shadow processing active - skipping premature redraw`);
+            //console.log(`[QUEUE] Shadow processing active - skipping premature redraw`);
             // Resume update scheduling after a brief delay to allow shadow processing to complete
             setTimeout(() => {
                 this.scheduleNextUpdate();
@@ -741,7 +1034,7 @@ class DrawingViewer {
 
     try {
       if (request.retryCount > 0) {
-       console.warn(`[QUEUE] Processing request for "${request.drawingName}" (retry: ${request.retryCount}/${this.MAX_RETRIES})`);
+       console.warn(`[QUEUE] Processing request for "${request.drawingName}" (retry: ${request.retryCount}/${this.connectionManager.getMaxRetries()})`);
       }
 
       // Initialize shadow processing for session-starting requests only
@@ -769,11 +1062,17 @@ class DrawingViewer {
         });
         console.log(`[QUEUE] Tracking sent request: cmd="${request.touchZoneInfo.cmd}", filter="${request.touchZoneInfo.filter}"`);
       }
-      // Use buildEndpoint to ensure proper URL formatting
-      let endpoint = this.buildEndpoint(request.endpoint);
-      console.log(`[QUEUE] Original endpoint: ${request.endpoint}, final endpoint: ${endpoint}`);
-      
-      const response = await fetch(endpoint, request.options);
+      // Use ConnectionManager to send command
+      console.log(`[QUEUE] Sending command: ${request.cmd}`);
+
+      const responseText = await this.connectionManager.send(request.cmd);
+
+      // Create response-like object for compatibility with existing code
+      const response = {
+        ok: true,
+        status: 200,
+        text: async () => responseText
+      };
 
       console.warn(`[QUEUE] Received response for "${request.drawingName}": status ${response.status}, queue length: ${this.requestQueue.length}`);
 
@@ -781,16 +1080,15 @@ class DrawingViewer {
         throw new Error(`Server returned ${response.status} for drawing "${request.drawingName}"`);
       }
 
-      // Get response text first to log the raw JSON
-      const responseText = await response.text();
+      // Log the raw JSON that we already have
       console.log(`[QUEUE] Received raw JSON data for "${request.drawingName}":`);
       console.log(responseText);
 
       // Check if response should be discarded
       if (request.discardResponse) {
-        console.log(`[QUEUE] Discarding response for "${request.drawingName}" - marked for discard due to user activity`);
+        //console.log(`[QUEUE] Discarding response for "${request.drawingName}" - marked for discard due to user activity`);
         // Clear the sent request and continue processing
-        console.log(`[SENTREQUEST] CLEARED: "${request.drawingName}" (${request.requestType}) at ${new Date().toISOString()}`);
+        //console.log(`[SENTREQUEST] CLEARED: "${request.drawingName}" (${request.requestType}) at ${new Date().toISOString()}`);
         this.sentRequest = null;
         setTimeout(() => {
            this.processRequestQueue();
@@ -982,10 +1280,10 @@ class DrawingViewer {
           this.checkAndApplyShadowUpdates();
 
           // Clear the sent request and continue processing
-          console.log(`[QUEUE] COMPLETED: "${request.drawingName}" (${request.requestType}) - clearing sentRequest`);
-          console.log(`[SENTREQUEST] CLEARED: "${request.drawingName}" (${request.requestType}) at ${new Date().toISOString()}`);
+          //console.log(`[QUEUE] COMPLETED: "${request.drawingName}" (${request.requestType}) - clearing sentRequest`);
+          //console.log(`[SENTREQUEST] CLEARED: "${request.drawingName}" (${request.requestType}) at ${new Date().toISOString()}`);
           this.sentRequest = null;
-          console.log(`[QUEUE] After completion - queue length: ${this.requestQueue.length}, sentRequest: null`);
+          //console.log(`[QUEUE] After completion - queue length: ${this.requestQueue.length}, sentRequest: null`);
 
           // Check shadow processing again now that sentRequest is cleared
           this.checkAndApplyShadowUpdates();
@@ -1030,11 +1328,11 @@ class DrawingViewer {
       // Increment retry count
       request.retryCount++;
 
-      if (request.retryCount <= this.MAX_RETRIES) {
-        console.log(`[QUEUE] Retrying request for "${request.drawingName}" (attempt ${request.retryCount} of ${this.MAX_RETRIES})`);
+      if (request.retryCount <= this.connectionManager.getMaxRetries()) {
+        //console.log(`[QUEUE] Retrying request for "${request.drawingName}" (attempt ${request.retryCount} of ${this.connectionManager.getMaxRetries()})`);
         // Put the request back at the front of the queue for retry
         this.requestQueue.unshift(request);
-        console.log(`[SENTREQUEST] CLEARED: "${request.drawingName}" (${request.requestType}) at ${new Date().toISOString()}`);
+        //console.log(`[SENTREQUEST] CLEARED: "${request.drawingName}" (${request.requestType}) at ${new Date().toISOString()}`);
         this.sentRequest = null;
         setTimeout(() => {
            this.processRequestQueue();
@@ -1042,18 +1340,19 @@ class DrawingViewer {
         return;
 
       } else {
-        console.error(`[QUEUE] Maximum retries (${this.MAX_RETRIES}) reached for "${request.drawingName}". Removing from queue.`);
+        console.error(`[QUEUE] Maximum retries (${this.connectionManager.getMaxRetries()}) reached for "${request.drawingName}". Removing from queue.`);
 
-        // Display error message only for the main drawing
-        if (request.drawingName === this.shadowProcessing.shadowDrawingManager.getCurrentDrawingName()) {
-          this.handleDrawingError({
-            error: 'request_failed',
-            message: `Failed to load drawing "${request.drawingName}" after ${this.MAX_RETRIES} attempts`,
-            pfodDrawing: 'error'
-          });
+        // Display error message for main drawing or initial connection (null drawing name)
+        const currentDrawingName = this.shadowProcessing.shadowDrawingManager.getCurrentDrawingName();
+        const isMainOrInitial = (request.drawingName === null || request.drawingName === currentDrawingName);
+
+        if (isMainOrInitial) {
+          // Show alert dialog with Close button that reloads page
+          console.log(`[ALERT] Triggering No Connection alert for "${request.drawingName}" (main or initial connection)`);
+          this.showNoConnectionAlert();
         } else {
           // For inserted drawings, just log the error but continue processing
-          console.warn(`[QUEUE] ERROR: Failed to load inserted drawing "${request.drawingName}" after ${this.MAX_RETRIES} attempts - continuing without it`);
+          console.warn(`[QUEUE] ERROR: Failed to load inserted drawing "${request.drawingName}" after ${this.connectionManager.getMaxRetries()} attempts - continuing without it`);
         }
 
         // Clear the failed request (it's already been removed from sentRequest)
@@ -1062,7 +1361,7 @@ class DrawingViewer {
  //       setTimeout(() => {
  //          this.processRequestQueue();
  //       }, 10);
-        
+
         // For inserted drawings, if we're at the end of the queue, proceed with redraw
         if (this.requestQueue.length === 0 && !this.sentRequest) {
           console.log(`[QUEUE] Queue empty after failed requests. Drawing with available data.`);
@@ -1070,7 +1369,7 @@ class DrawingViewer {
           this.redrawCanvas();
           // Resume update scheduling after failed request cleanup
           this.scheduleNextUpdate();
-          
+
         }
       }
     } finally {
@@ -1095,17 +1394,14 @@ class DrawingViewer {
 
       const savedVersion = localStorage.getItem(`${drawingName}_version`);
       const savedData = localStorage.getItem(`${drawingName}_data`);
-      let endpoint = `/pfodWeb`;
-      // Add version query parameter only if we have both version and data
+      let cmd;
+      // Add version to command only if we have both version and data
       if (savedVersion) { // && savedData) {
-        // Use /pfodWeb endpoint with cmd parameter in {drawingName} format
-        endpoint += `?cmd=${encodeURIComponent('{' + savedVersion+ ':'+ drawingName + '}')}`;
-        endpoint += `&version=${encodeURIComponent(savedVersion)}`; // for control
+        cmd = '{' + savedVersion + ':' + drawingName + '}';
         console.log(`Using saved version: ${savedVersion}`);
       } else {
         console.log('No valid saved version+data pair - requesting fresh data (dwg:start)');
-        // Use /pfodWeb endpoint with cmd parameter in {drawingName} format
-        endpoint += `?cmd=${encodeURIComponent('{' + drawingName + '}')}`;
+        cmd = '{' + drawingName + '}';
       }
 
       /**
@@ -1125,10 +1421,8 @@ class DrawingViewer {
         }
       }
       **/
-      // Keep URL as /pfodWeb (or original URL) - don't change to direct drawing URLs
-
       // Add to the request queue
-      this.addToRequestQueue(drawingName, endpoint, null, null, 'refresh');
+      this.addToRequestQueue(drawingName, cmd, null, null, 'refresh');
       console.log(`[QUEUE_DWG] Added "${drawingName}" to request queue`);
     } catch (error) {
       console.error(`[QUEUE_DWG] Failed to queue drawing "${drawingName}":`, error);
@@ -1459,10 +1753,10 @@ class DrawingViewer {
         console.log(`[INSERT_DWG] Drawing "${drawingName}" in list but data missing - will request it`);
         // Add to the request queue if not already in queue
         if (!this.requestQueue.some(req => req.drawingName === drawingName)) {
-          const endpoint = `/pfodWeb?cmd=${encodeURIComponent('{' + drawingName + '}')}`;
+          const cmd = '{' + drawingName + '}';
 
           console.warn(`[INSERT_DWG] Adding "${drawingName}" to request queue (already in drawings)`);
-          this.addToRequestQueue(drawingName, endpoint, null, null, 'insertDwg');
+          this.addToRequestQueue(drawingName, cmd, null, null, 'insertDwg');
         } else {
           console.log(`[INSERT_DWG] "${drawingName}" already in request queue`);
         }
@@ -1496,7 +1790,7 @@ class DrawingViewer {
 
     // Add to the request queue
     if (!this.requestQueue.some(req => req.drawingName === drawingName)) {
-      const endpoint = `/pfodWeb?cmd=${encodeURIComponent('{' + drawingName + '}')}`;
+      const cmd = '{' + drawingName + '}';
 
       // Determine the appropriate request type based on current shadow processing context
       let requestType = 'insertDwg';
@@ -1507,7 +1801,7 @@ class DrawingViewer {
         console.warn(`[INSERT_DWG] Adding "${drawingName}" to request queue (new insert)`);
       }
 
-      this.addToRequestQueue(drawingName, endpoint, null, null, requestType);
+      this.addToRequestQueue(drawingName, cmd, null, null, requestType);
     } else {
       console.log(`[INSERT_DWG] "${drawingName}" already in request queue`);
     }
@@ -1596,6 +1890,141 @@ class DrawingViewer {
     });
 
     console.log(`Removed ${keysToRemove.length} touchZones for drawing: ${drawingName}`);
+  }
+
+  // Build connection info message
+  getConnectionInfoMessage() {
+    let connectionInfo = '';
+
+    console.log('[CONNECTION_INFO] Protocol:', this.protocol);
+    console.log('[CONNECTION_INFO] Adapter:', this.connectionManager?.adapter);
+
+    if (this.protocol === 'http' && this.targetIP) {
+      connectionInfo = `HTTP to ${this.targetIP}`;
+    } else if (this.protocol === 'serial') {
+      const portName = this.connectionManager?.adapter?.portName || 'COM?';
+      connectionInfo = `Serial: ${portName} @ ${this.baudRate} baud`;
+    } else if (this.protocol === 'ble') {
+      // Try multiple ways to get device name
+      let deviceName = this.connectionManager?.adapter?.device?.name;
+      if (!deviceName) {
+        deviceName = this.connectionManager?.adapter?.deviceName;
+      }
+      if (!deviceName) {
+        deviceName = 'Unknown Device';
+      }
+      connectionInfo = `BLE: ${deviceName}`;
+    } else {
+      connectionInfo = 'Unknown Connection';
+    }
+
+    console.log('[CONNECTION_INFO] Final message:', connectionInfo);
+    return connectionInfo;
+  }
+
+  // Show "No Connection" alert dialog after max retries
+  showNoConnectionAlert() {
+    console.log('[ALERT] Showing No Connection alert after max retry attempts');
+
+    // Create overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'no-connection-overlay';
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: 999998;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    `;
+
+    // Create alert dialog
+    const alertBox = document.createElement('div');
+    alertBox.style.cssText = `
+      background-color: white;
+      padding: 30px 40px;
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      text-align: center;
+      max-width: 500px;
+      font-family: Arial, sans-serif;
+    `;
+
+    // Create message
+    const message = document.createElement('p');
+    message.textContent = 'No Connection';
+    message.style.cssText = `
+      font-size: 24px;
+      font-weight: bold;
+      margin: 0 0 15px 0;
+      color: #d32f2f;
+    `;
+
+    // Create connection details
+    const details = document.createElement('p');
+    const connectionInfo = this.getConnectionInfoMessage();
+    details.textContent = `Failed to connect to: ${connectionInfo}`;
+    details.style.cssText = `
+      font-size: 14px;
+      margin: 0 0 20px 0;
+      color: #666;
+      font-family: monospace;
+    `;
+
+    // Create Close button
+    const closeButton = document.createElement('button');
+    closeButton.textContent = 'Close';
+    closeButton.style.cssText = `
+      background-color: #2196F3;
+      color: white;
+      border: none;
+      padding: 10px 30px;
+      font-size: 16px;
+      border-radius: 5px;
+      cursor: pointer;
+      outline: none;
+    `;
+
+    // Make button respond to hover
+    closeButton.onmouseover = () => {
+      closeButton.style.backgroundColor = '#1976D2';
+    };
+    closeButton.onmouseout = () => {
+      closeButton.style.backgroundColor = '#2196F3';
+    };
+
+    // Close button handler - reload page
+    const reloadPage = () => {
+      console.log('[ALERT] Close button clicked - reloading page');
+      window.location.reload();
+    };
+
+    closeButton.onclick = reloadPage;
+
+    // Handle Enter key
+    const handleKeyPress = (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        reloadPage();
+      }
+    };
+    document.addEventListener('keydown', handleKeyPress);
+
+    // Focus the button so Enter works immediately
+    setTimeout(() => {
+      closeButton.focus();
+    }, 100);
+
+    // Assemble dialog
+    alertBox.appendChild(message);
+    alertBox.appendChild(details);
+    alertBox.appendChild(closeButton);
+    overlay.appendChild(alertBox);
+    document.body.appendChild(overlay);
   }
 
   // Handle drawing error (not found, etc) - instance method for multi-viewer support
@@ -1718,6 +2147,7 @@ function loadScript(src) {
 async function loadDependencies() {
   const dependencies = [
     './version.js',
+    './connectionManager.js',
     './DrawingManager.js',
     './displayTextUtils.js',
     './redraw.js',
@@ -1730,6 +2160,14 @@ async function loadDependencies() {
   for (const dep of dependencies) {
     await loadScript(dep);
   }
+
+  // Make JS_VERSION available globally after dependencies are loaded
+  if (typeof JS_VERSION !== 'undefined') {
+    window.JS_VERSION = JS_VERSION;
+    console.log('[PFODWEB_DEBUG] JS_VERSION loaded and made globally available:', JS_VERSION);
+  } else {
+    console.warn('[PFODWEB_DEBUG] Warning: JS_VERSION not defined after loading dependencies');
+  }
 }
 
 // Global viewer instance
@@ -1738,7 +2176,7 @@ let drawingViewer = null;
 // Event Listeners
 window.addEventListener('DOMContentLoaded', async () => {
   console.log('[PFODWEB_DEBUG] DOMContentLoaded event fired');
-  
+
   console.log('[PFODWEB_DEBUG] URL when DOMContentLoaded:', window.location.href);
   console.log('[PFODWEB_DEBUG] Referrer when DOMContentLoaded:', document.referrer);
   await loadDependencies();
@@ -1756,10 +2194,20 @@ window.addEventListener('resize', () => {
 // Touch state is now handled as instance properties in DrawingViewer class
 // See this.touchState in DrawingViewer constructor
 
-// Handle browser refresh button
-window.addEventListener('beforeunload', function(event) {
+// Handle browser refresh button and navigation away
+window.addEventListener('beforeunload', async function(event) {
   // Store the current URL pattern
   localStorage.setItem('lastUrlPattern', window.location.pathname);
+
+  // Clean up connection if it exists
+  if (drawingViewer && drawingViewer.connectionManager) {
+    console.log('[CLEANUP] Disconnecting before page unload...');
+    try {
+      await drawingViewer.connectionManager.disconnect();
+    } catch (error) {
+      console.error('[CLEANUP] Error during disconnect:', error);
+    }
+  }
 });
 
 // Handle returning from browser refresh
@@ -1778,19 +2226,20 @@ window.addEventListener('DOMContentLoaded', function() {
   }
 });
 
-// Initialize the application
-async function initializeApp() {
-  console.log('[PFODWEB_DEBUG] initializeApp() called');
-  console.log('[PFODWEB_DEBUG] Current URL:', window.location.href);
-  console.log('[PFODWEB_DEBUG] Referrer:', document.referrer);
-  console.log('[PFODWEB_DEBUG] Document ready state:', document.readyState);
-  console.log('Initializing canvas drawing viewer');
+// Continue initialization after connection prompt
+function continueInitialization() {
+  console.log('[PFODWEB_DEBUG] continueInitialization() called after connection prompt');
 
-  // Check if drawingViewer already exists
+  // Always clean up any existing drawingViewer when navigating to this page
+  // This handles the case where user goes back from this page and then navigates here again
   if (drawingViewer) {
-    console.log('[PFODWEB_DEBUG] DrawingViewer already exists - skipping creation but doing initial request');
-    drawingViewer.queueInitialRequest(); // request refresh with{.}
-    return;
+    console.log('[PFODWEB_DEBUG] Cleaning up existing DrawingViewer from previous session');
+    if (drawingViewer.connectionManager) {
+      drawingViewer.connectionManager.disconnect().catch(err => {
+        console.error('[PFODWEB_DEBUG] Error disconnecting previous connection:', err);
+      });
+    }
+    drawingViewer = null;
   }
 
   // Create the DrawingViewer instance
@@ -1817,9 +2266,131 @@ async function initializeApp() {
   }
 }
 
+// Helper function to validate IP address
+function isValidIPAddress(ip) {
+  if (!ip || typeof ip !== 'string') return false;
+  const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+  if (!ipRegex.test(ip)) return false;
+  const parts = ip.split('.');
+  return parts.every(part => {
+    const num = parseInt(part, 10);
+    return num >= 0 && num <= 255;
+  });
+}
+
+// Initialize the application
+async function initializeApp() {
+  console.log('[PFODWEB_DEBUG] initializeApp() called');
+  console.log('[PFODWEB_DEBUG] Current URL:', window.location.href);
+  console.log('[PFODWEB_DEBUG] Referrer:', document.referrer);
+  console.log('[PFODWEB_DEBUG] Document ready state:', document.readyState);
+  console.log('Initializing canvas drawing viewer');
+
+  // Check if connection parameters are provided
+  const urlParams = new URLSearchParams(window.location.search);
+
+  // Check for protocol-specific parameters
+  const hasTargetIP = urlParams.has('targetIP');
+  const hasSerial = urlParams.has('serial');
+  const hasBLE = urlParams.has('ble');
+
+  // If targetIP is provided, validate it
+  if (hasTargetIP) {
+    const targetIP = urlParams.get('targetIP');
+
+    // Check if targetIP is empty or invalid
+    if (!targetIP || targetIP.trim() === '' || !isValidIPAddress(targetIP)) {
+      console.log('[PFODWEB_DEBUG] targetIP parameter provided but empty or invalid:', targetIP);
+      console.log('[PFODWEB_DEBUG] Showing HTTP connection prompt for user to enter valid IP');
+
+      // Pre-select HTTP radio button
+      document.getElementById('prompt-protocol-http').checked = true;
+      // Update UI to show HTTP settings
+      if (typeof updatePromptUI === 'function') {
+        updatePromptUI();
+      }
+      // Clear any existing IP value and focus on the input field
+      const ipInput = document.getElementById('prompt-ip');
+      if (ipInput) {
+        ipInput.value = '';
+        ipInput.focus();
+      }
+      // Validate the connect button state
+      if (typeof validateConnectButton === 'function') {
+        validateConnectButton();
+      }
+      document.getElementById('connection-prompt').style.display = 'flex';
+      return;
+    }
+
+    // Valid targetIP provided, use it directly and continue
+    console.log('[PFODWEB_DEBUG] Valid HTTP connection with targetIP=' + targetIP + ' - proceeding directly');
+    continueInitialization();
+    return;
+  }
+
+  // If serial parameter is in URL, show connection prompt with Serial section pre-selected
+  if (hasSerial) {
+    console.log('[PFODWEB_DEBUG] Serial parameter found - showing Serial connection prompt');
+    // Pre-select Serial radio button
+    document.getElementById('prompt-protocol-serial').checked = true;
+    // Update UI to show Serial settings
+    if (typeof updatePromptUI === 'function') {
+      updatePromptUI();
+    }
+    // If serial has a value, try to pre-fill the baud rate
+    const baudRate = urlParams.get('serial');
+    if (baudRate && baudRate !== '') {
+      const baudSelect = document.getElementById('prompt-baud');
+      // Try to set the value - if invalid, it won't match any option
+      baudSelect.value = baudRate;
+      // If the value didn't match any option, the select will have an empty value
+      console.log('[PFODWEB_DEBUG] Set baud rate to:', baudRate, 'Actual value:', baudSelect.value);
+    }
+    // Validate the connect button state after pre-filling
+    if (typeof validateConnectButton === 'function') {
+      validateConnectButton();
+    }
+    document.getElementById('connection-prompt').style.display = 'flex';
+    return;
+  }
+
+  // If ble parameter is in URL, show connection prompt with BLE section pre-selected
+  if (hasBLE) {
+    console.log('[PFODWEB_DEBUG] BLE parameter found - showing BLE connection prompt');
+    // Pre-select BLE radio button
+    document.getElementById('prompt-protocol-ble').checked = true;
+    // Update UI to show BLE settings
+    if (typeof updatePromptUI === 'function') {
+      updatePromptUI();
+    }
+    document.getElementById('connection-prompt').style.display = 'flex';
+    return;
+  }
+
+  // No parameters - check if designer mode
+  const hasDesigner = urlParams.has('designer');
+
+  if (hasDesigner) {
+    // Designer mode - use default server connection without prompt
+    console.log('[PFODWEB_DEBUG] Designer mode - using default server connection');
+    continueInitialization();
+  } else {
+    // Show connection prompt with HTTP pre-selected (default)
+    console.log('[PFODWEB_DEBUG] No connection parameters - showing connection prompt');
+    // Validate the connect button state (HTTP is selected by default, so button should be enabled)
+    if (typeof validateConnectButton === 'function') {
+      validateConnectButton();
+    }
+    document.getElementById('connection-prompt').style.display = 'flex';
+  }
+}
+
+// Make continueInitialization available globally so connection prompt can call it
+window.continueInitialization = continueInitialization;
+
 
 // Global touch event handling functions moved to pfodWebMouse.js
 
-// Make DrawingViewer and JS_VERSION available globally for browser use
+// Make DrawingViewer available globally for browser use
 window.DrawingViewer = DrawingViewer;
-window.JS_VERSION = JS_VERSION;

@@ -9,6 +9,19 @@
 
 // Make pfodWebMouse available globally for browser use
 window.pfodWebMouse = {
+  // Helper method to calculate scale factors based on actual rendered canvas size
+  // This handles layout changes (like raw message view) that affect canvas display
+  getCanvasScale: function() {
+    const rect = this.canvas.getBoundingClientRect();
+    const logicalWidth = this.redraw ? (this.redraw.redrawDrawingManager?.drawingsData[this.redraw.getCurrentDrawingName()]?.data?.x || 255) : 255;
+    const logicalHeight = this.redraw ? (this.redraw.redrawDrawingManager?.drawingsData[this.redraw.getCurrentDrawingName()]?.data?.y || 255) : 255;
+    return {
+      scaleX: rect.width / logicalWidth,
+      scaleY: rect.height / logicalHeight,
+      rect: rect
+    };
+  },
+
   setupEventListeners: function(drawingViewer) {
     const canvas = drawingViewer.canvas;
     
@@ -51,25 +64,25 @@ window.pfodWebMouse = {
   handleMouseDown: function(e) {
     console.warn(`[MOUSE_DOWN] called handleMouseDown`);
 
-    // Get canvas-relative coordinates
-    const rect = this.canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / this.canvas.scaleX;
-    const y = (e.clientY - rect.top) / this.canvas.scaleY;
+    // Get canvas-relative coordinates and scale factors
+    const scale = window.pfodWebMouse.getCanvasScale.call(this);
+    const x = (e.clientX - scale.rect.left) / scale.scaleX;
+    const y = (e.clientY - scale.rect.top) / scale.scaleY;
 
     let minTouch_mm = 9;
     let minPercent = 2 / 100;
     let colPixelsHalf9mm = (96 * minTouch_mm) / (2 * 25.4); // half 9mm to add to both sides
     let rowPixelsHalf9mm = (96 * minTouch_mm) / (2 * 25.4);
-    if ((rect.width * minPercent) > colPixelsHalf9mm) {
-      colPixelsHalf9mm = rect.width * minPercent;
+    if ((scale.rect.width * minPercent) > colPixelsHalf9mm) {
+      colPixelsHalf9mm = scale.rect.width * minPercent;
     }
-    if ((rect.height * minPercent) > rowPixelsHalf9mm) {
-      rowPixelsHalf9mm = rect.height * minPercent;
+    if ((scale.rect.height * minPercent) > rowPixelsHalf9mm) {
+      rowPixelsHalf9mm = scale.rect.height * minPercent;
     }
     console.log(`DOWN in touchZone: enlarge by ${colPixelsHalf9mm} x ${rowPixelsHalf9mm}`);
-    colPixelsHalf9mm = colPixelsHalf9mm / this.canvas.scaleX;
-    rowPixelsHalf9mm = rowPixelsHalf9mm / this.canvas.scaleX;
-    console.log(`DOWN in touchZone: canvas ${rect.width} x ${rect.height}`);
+    colPixelsHalf9mm = colPixelsHalf9mm / scale.scaleX;
+    rowPixelsHalf9mm = rowPixelsHalf9mm / scale.scaleX;
+    console.log(`DOWN in touchZone: canvas ${scale.rect.width} x ${scale.rect.height}`);
     console.log(`DOWN in touchZone: enlarge by dwg coords ${colPixelsHalf9mm} x ${rowPixelsHalf9mm}`);
 
     // Update touch state
@@ -153,25 +166,25 @@ window.pfodWebMouse = {
     }
     console.log(`[MOUSE_MOVE] Processing mouse move event`);
 
-    // Get canvas-relative coordinates
-    const rect = this.canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / this.canvas.scaleX;
-    const y = (e.clientY - rect.top) / this.canvas.scaleY;
+    // Get canvas-relative coordinates and scale factors
+    const scale = window.pfodWebMouse.getCanvasScale.call(this);
+    const x = (e.clientX - scale.rect.left) / scale.scaleX;
+    const y = (e.clientY - scale.rect.top) / scale.scaleY;
 
     let minTouch_mm = 9;
     let minPercent = 2 / 100;
     let colPixelsHalf9mm = (96 * minTouch_mm) / (2 * 25.4); // half 9mm to add to both sides
     let rowPixelsHalf9mm = (96 * minTouch_mm) / (2 * 25.4);
-    if ((rect.width * minPercent) > colPixelsHalf9mm) {
-      colPixelsHalf9mm = rect.width * minPercent;
+    if ((scale.rect.width * minPercent) > colPixelsHalf9mm) {
+      colPixelsHalf9mm = scale.rect.width * minPercent;
     }
-    if ((rect.height * minPercent) > rowPixelsHalf9mm) {
-      rowPixelsHalf9mm = rect.height * minPercent;
+    if ((scale.rect.height * minPercent) > rowPixelsHalf9mm) {
+      rowPixelsHalf9mm = scale.rect.height * minPercent;
     }
     console.log(`DRAG in touchZone enlarge by ${colPixelsHalf9mm} x ${rowPixelsHalf9mm}`);
-    colPixelsHalf9mm = colPixelsHalf9mm / this.canvas.scaleX;
-    rowPixelsHalf9mm = rowPixelsHalf9mm / this.canvas.scaleX;
-    console.log(`DRAG in touchZone canvas ${rect.width} x ${rect.height}`);
+    colPixelsHalf9mm = colPixelsHalf9mm / scale.scaleX;
+    rowPixelsHalf9mm = rowPixelsHalf9mm / scale.scaleX;
+    console.log(`DRAG in touchZone canvas ${scale.rect.width} x ${scale.rect.height}`);
     console.log(`DRAG in touchZone enlarge by dwg coords ${colPixelsHalf9mm} x ${rowPixelsHalf9mm}`);
 
     // Update current position
@@ -253,10 +266,10 @@ window.pfodWebMouse = {
   handleMouseUp: function(e) {
     if (!this.touchState.isDown) return;
 
-    // Get canvas-relative coordinates
-    const rect = this.canvas.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / this.canvas.scaleX;
-    const y = (e.clientY - rect.top) / this.canvas.scaleY;
+    // Get canvas-relative coordinates and scale factors
+    const scale = window.pfodWebMouse.getCanvasScale.call(this);
+    const x = (e.clientX - scale.rect.left) / scale.scaleX;
+    const y = (e.clientY - scale.rect.top) / scale.scaleY;
 
     // Cancel long press timer if active
     if (this.touchState.longPressTimer) {
@@ -328,25 +341,25 @@ window.pfodWebMouse = {
       return;
     }
 
-    // Get canvas-relative coordinates
-    const rect = this.canvas.getBoundingClientRect(); // canvas rect in pixels 
-    const x = (e.clientX - rect.left) / this.canvas.scaleX;
-    const y = (e.clientY - rect.top) / this.canvas.scaleY;
+    // Get canvas-relative coordinates and scale factors
+    const scale = window.pfodWebMouse.getCanvasScale.call(this);
+    const x = (e.clientX - scale.rect.left) / scale.scaleX;
+    const y = (e.clientY - scale.rect.top) / scale.scaleY;
 
     let minTouch_mm = 9;
     let minPercent = 2 / 100;
     let colPixelsHalf9mm = (96 * minTouch_mm) / (2 * 25.4); // half 9mm to add to both sides
     let rowPixelsHalf9mm = (96 * minTouch_mm) / (2 * 25.4);
-    if ((rect.width * minPercent) > colPixelsHalf9mm) {
-      colPixelsHalf9mm = rect.width * minPercent;
+    if ((scale.rect.width * minPercent) > colPixelsHalf9mm) {
+      colPixelsHalf9mm = scale.rect.width * minPercent;
     }
-    if ((rect.height * minPercent) > rowPixelsHalf9mm) {
-      rowPixelsHalf9mm = rect.height * minPercent;
+    if ((scale.rect.height * minPercent) > rowPixelsHalf9mm) {
+      rowPixelsHalf9mm = scale.rect.height * minPercent;
     }
     console.log(`CLICK in touchZone: enlarge by ${colPixelsHalf9mm} x ${rowPixelsHalf9mm}`);
-    colPixelsHalf9mm = colPixelsHalf9mm / this.canvas.scaleX;
-    rowPixelsHalf9mm = rowPixelsHalf9mm / this.canvas.scaleX;
-    console.log(`CLICK in touchZone: canvas ${rect.width} x ${rect.height}`);
+    colPixelsHalf9mm = colPixelsHalf9mm / scale.scaleX;
+    rowPixelsHalf9mm = rowPixelsHalf9mm / scale.scaleX;
+    console.log(`CLICK in touchZone: canvas ${scale.rect.width} x ${scale.rect.height}`);
     console.log(`CLICK in touchZone: enlarge by dwg coords ${colPixelsHalf9mm} x ${rowPixelsHalf9mm}`);
 
     // Find touchZone at click position
@@ -719,34 +732,21 @@ window.pfodWebMouse = {
     // Execute touchAction if it exists for this cmd clears before starting
     window.pfodWebMouse.executeTouchAction.call(this, drawingName, touchZone.cmd, col, row, touchType);
     if (sendMsg) {
-      // Build the endpoint for the touchZone event using /pfodWeb
+      // Build the command for the touchZone event
       // For touchZone actions, include col, row, touchType inside the command
       // Use dynamic identifier from calling context (this.currentIdentifier)
       const identifier = this.currentIdentifier || 'pfodWeb';
-      const touchZoneCmd = `{${identifier}~${touchZone.cmd}\`${col}\`${row}\`${touchType}}`;
-      let endpoint = `/pfodWeb?cmd=${encodeURIComponent(touchZoneCmd)}`;
+      let touchZoneCmd = `{${identifier}~${touchZone.cmd}\`${col}\`${row}\`${touchType}}`;
 
-      // Add editedText if it exists (for text input touchZones)
-      //        if (this.textInputValue) {
-      // For touchActionInput, append ~editedText inside the braces
-      //            const touchZoneCmdWithText = `{pfodWeb~${touchZone.cmd}\`${col}\`${row}\`${touchType}~${this.textInputValue}}`;
-      //            endpoint = `/pfodWeb?cmd=${encodeURIComponent(touchZoneCmdWithText)}`;
-      //           this.textInputValue = null; // Clear after use
-      //       }
-
-      console.log(`[TOUCH_ACTION_QUEUE] endpoint before version: ${endpoint}`);
-
-      // Add version query parameter if available
+      // Add version to command if available
       const savedVersion = localStorage.getItem(`${drawingName}_version`);
       console.log(`[TOUCH_ACTION_QUEUE] drawingName: ${drawingName}, savedVersion: "${savedVersion}"`);
-      console.log(`[TOUCH_ACTION_QUEUE] localStorage key: "${drawingName}_version"`);
-      console.log(`[TOUCH_ACTION_QUEUE] All localStorage keys:`, Object.keys(localStorage));
       if (savedVersion !== null) {
-        endpoint += `&version=${encodeURIComponent(savedVersion)}`;
-        console.log(`[TOUCH_ACTION_QUEUE] endpoint after adding version: ${endpoint}`);
-      } else {
-        console.log(`[TOUCH_ACTION_QUEUE] No version added - savedVersion: "${savedVersion}" (null)`);
+        touchZoneCmd = '{' + savedVersion + ':' + touchZoneCmd.substring(1);
+        console.log(`[TOUCH_ACTION_QUEUE] Added version to command: ${touchZoneCmd}`);
       }
+
+      console.log(`[TOUCH_ACTION_QUEUE] command: ${touchZoneCmd}`);
 
       // Set up request options - will be corrected by addToRequestQueue for cross-origin
       const options = {
@@ -760,7 +760,7 @@ window.pfodWebMouse = {
       };
 
       // Add to the request queue with touchZone info for drag optimization
-      this.addToRequestQueue(drawingName, endpoint, options, {
+      this.addToRequestQueue(drawingName, touchZoneCmd, options, {
         cmd: touchZone.cmd,
         filter: touchType
       }, 'touch');
@@ -959,26 +959,22 @@ window.pfodWebMouse = {
       console.log(`[TOUCH_ACTION_INPUT] Dialog result: ${result}, text: "${text}"`);
 
       if (result === 'ok') {
-        // Build endpoint with the edited text included in the command
+        // Build command with the edited text included
         // For touchActionInput, include col, row, touchType, and editedText inside the command
         // Use dynamic identifier from calling context (this.currentIdentifier)
         const identifier = this.currentIdentifier || 'pfodWeb';
-        const touchZoneCmd = `{${identifier}~${cmd}\`${col}\`${row}\`${touchType}~${text}}`;
-        let endpoint = `/pfodWeb?cmd=${encodeURIComponent(touchZoneCmd)}`;
+        let touchZoneCmd = `{${identifier}~${cmd}\`${col}\`${row}\`${touchType}~${text}}`;
 
-        console.log(`[TOUCH_ACTION_INPUT] endpoint before version: ${endpoint}`);
-
-        // Add version query parameter if available
+        // Add version to command if available
         const savedVersion = localStorage.getItem(`${drawingName}_version`);
         console.log(`[TOUCH_ACTION_INPUT] drawingName: ${drawingName}, savedVersion: ${savedVersion}`);
         if (savedVersion !== null) {
-          endpoint += `&version=${encodeURIComponent(savedVersion)}`;
-          console.log(`[TOUCH_ACTION_INPUT] endpoint after adding version: ${endpoint}`);
-        } else {
-          console.log(`[TOUCH_ACTION_INPUT] No version added - savedVersion: ${savedVersion} (null)`);
+          touchZoneCmd = '{' + savedVersion + ':' + touchZoneCmd.substring(1);
+          console.log(`[TOUCH_ACTION_INPUT] Added version to command: ${touchZoneCmd}`);
         }
 
-        console.log(`[TOUCH_ACTION_INPUT] Sending request with edited text: ${endpoint}`);
+        console.log(`[TOUCH_ACTION_INPUT] command: ${touchZoneCmd}`);
+        console.log(`[TOUCH_ACTION_INPUT] Sending request with edited text: ${touchZoneCmd}`);
 
         // Queue the request with proper headers
         const options = {
@@ -990,7 +986,7 @@ window.pfodWebMouse = {
           credentials: 'same-origin',
           cache: 'no-cache'
         };
-        this.addToRequestQueue(drawingName, endpoint, options, {
+        this.addToRequestQueue(drawingName, touchZoneCmd, options, {
           cmd: cmd,
           filter: touchType
         }, 'touch');

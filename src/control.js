@@ -316,7 +316,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 if (response.ok) {
                     // Open the pfodWeb endpoint which will serve index.html with the correct main drawing
-                    window.open('/pfodWeb', '_blank');
+                    // Add ?designer parameter to skip connection prompt and use default server connection
+                    window.open('/pfodWeb?designer', '_blank');
                 } else {
                     console.error('Failed to set main drawing');
                     alert('Failed to set main drawing');
@@ -488,9 +489,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 console.log(`Main drawing set to: ${selectedDrawingName}`);
-                
-                // Perform Arduino export operation
-                exportDrawingToArduino(selectedDrawingName);
+
+                // Show Arduino export connection type modal
+                showArduinoExportModal(selectedDrawingName);
             } catch (error) {
                 console.error('Error setting main drawing:', error);
                 alert(`Error setting main drawing: ${error.message}`);

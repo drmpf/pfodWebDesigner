@@ -36,8 +36,8 @@ function safelyCallInitializeApp(iframeElement, fallbackCallback = null) {
 function setupPreviewIframeWithDrawing(iframeElement, drawingName, usePreviewParam = false) {
     const paramName = usePreviewParam ? 'preview' : 'drawing';
     const timestamp = Date.now();
-    const url = `/pfodWebDebug?${paramName}=${encodeURIComponent(drawingName)}&t=${timestamp}`;
-    
+    const url = `/pfodWebDebug?designer&${paramName}=${encodeURIComponent(drawingName)}&t=${timestamp}`;
+
     console.log(`Setting up preview iframe for ${paramName}: ${drawingName}`);
     
     iframeElement.src = url;

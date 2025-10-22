@@ -297,6 +297,115 @@
             cursor: not-allowed;
             opacity: 0.7;
         }
+
+        /* Modal styles for Arduino Export dialog */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .modal.show {
+            display: block;
+        }
+
+        .modal-content {
+            background-color: #f5f5f5;
+            margin: 10% auto;
+            padding: 30px;
+            border: 1px solid #888;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            animation: slideDown 0.3s ease-out;
+        }
+
+        @keyframes slideDown {
+            from {
+                transform: translateY(-50px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
+        .modal-header {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .modal-options {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .export-option {
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            cursor: pointer;
+            background-color: white;
+            transition: all 0.2s ease;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .export-option:hover {
+            border-color: #4CAF50;
+            background-color: #f0f8f0;
+            box-shadow: 0 2px 8px rgba(76, 175, 80, 0.2);
+        }
+
+        .export-option-title {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+
+        .export-option-subtitle {
+            font-size: 12px;
+            color: #666;
+            font-style: italic;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        .modal-cancel-btn {
+            padding: 8px 16px;
+            background-color: #999;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .modal-cancel-btn:hover {
+            background-color: #777;
+        }
     </style>
 </head>
 <body>
@@ -373,6 +482,34 @@
         </div>
         
         <!-- Add Items Tab removed as it's now a button in the Drawings tab -->
+    </div>
+
+    <!-- Arduino Export Connection Type Modal -->
+    <div id="arduino-export-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Select Connection Type</div>
+            <div class="modal-options">
+                <div class="export-option" data-connection-type="serial">
+                    <div class="export-option-title">Serial Connection</div>
+                    <div class="export-option-subtitle" id="serial-zip-name"></div>
+                </div>
+                <div class="export-option" data-connection-type="ble">
+                    <div class="export-option-title">BLE Connection for ESP32</div>
+                    <div class="export-option-subtitle" id="ble-zip-name"></div>
+                </div>
+                <div class="export-option" data-connection-type="http">
+                    <div class="export-option-title">HTTP Connection for ESP8266, ESP32 and Pi PicoW/2W</div>
+                    <div class="export-option-subtitle" id="http-zip-name"></div>
+                </div>
+                <div class="export-option" data-connection-type="dwg-only">
+                    <div class="export-option-title">Drawing Files Only</div>
+                    <div class="export-option-subtitle" id="dwg-zip-name"></div>
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button type="button" class="modal-cancel-btn" id="modal-cancel-btn">Cancel</button>
+            </div>
+        </div>
     </div>
 
     <script src="version.js"></script>

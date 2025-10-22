@@ -17,7 +17,7 @@ var DEBUG = false;
 if ((typeof DEBUG === 'undefined') || (DEBUG === false) || (DEBUG === 'false')) {
   if (typeof DEBUG === 'undefined') {
     console.log('[PFODWEB_DEBUG] DEBUG not defined.  Disabling logging');
-  } else {  
+  } else {
     console.log('[PFODWEB_DEBUG] DEBUG defined as false.  Disabling logging. DEBUG = ',DEBUG);
   }
   // false suppress logging
@@ -46,6 +46,7 @@ function loadScript_noDebug(src) {
 async function loadDependencies_noDebug() {
   const dependencies = [
     './version.js',
+    './connectionManager.js',
     './pfodWebDebug.js',
     './DrawingManager.js',
     './displayTextUtils.js',

@@ -13,17 +13,73 @@
  * sendUpdate()
  */
  
- // Import version from version.js  
+ // Import version from version.js
   const arduinoExportVers = `pfodWeb Designer Arduino Export ${window.JS_VERSION}`
      let filesToZip = [];
      let insertedDwgs = [];
      let mainDwgName;
      let haveErrors = false;
+     let currentConnectionType = 'serial'; // default connection type
+
+// Helper function to get directory prefix based on connection type
+    function getDirPrefix() {
+      if (currentConnectionType === 'serial') {
+        return `${mainDwgName}_serial/`;
+      } else if (currentConnectionType === 'ble') {
+        return `${mainDwgName}_ble/`;
+      } else if (currentConnectionType === 'http') {
+        return `${mainDwgName}_http/`;
+      } else if (currentConnectionType === 'dwg-only') {
+        return '';
+      }
+      return `${mainDwgName}_serial/`; // default
+    }
+
+// Function to show the connection type selection modal
+    function showArduinoExportModal(drawingName) {
+      if (!drawingName) return;
+
+      mainDwgName = drawingName;
+
+      // Update the modal with zip filenames
+      document.getElementById('serial-zip-name').textContent = `${mainDwgName}_serial.zip`;
+      document.getElementById('ble-zip-name').textContent = `${mainDwgName}_ble.zip`;
+      document.getElementById('http-zip-name').textContent = `${mainDwgName}_http.zip`;
+      document.getElementById('dwg-zip-name').textContent = `Dwg_${mainDwgName}.zip`;
+
+      // Show the modal
+      const modal = document.getElementById('arduino-export-modal');
+      modal.classList.add('show');
+
+      // Handle option selection
+      const options = document.querySelectorAll('.export-option');
+      options.forEach(option => {
+        option.onclick = function() {
+          const connectionType = this.dataset.connectionType;
+          modal.classList.remove('show');
+          exportDrawingToArduino(drawingName, connectionType);
+        };
+      });
+
+      // Handle cancel button
+      const cancelBtn = document.getElementById('modal-cancel-btn');
+      cancelBtn.onclick = function() {
+        modal.classList.remove('show');
+      };
+
+      // Close modal when clicking outside of it
+      modal.onclick = function(event) {
+        if (event.target === modal) {
+          modal.classList.remove('show');
+        }
+      };
+    }
 
 // Function to export drawing to Arduino code format
-    function exportDrawingToArduino(drawingName) {
+    function exportDrawingToArduino(drawingName, connectionType = 'serial') {
       if (!drawingName) return;
       mainDwgName = drawingName;
+      currentConnectionType = connectionType;
       filesToZip = [];
       insertedDwgs = [];
       haveErrors = false;
@@ -34,38 +90,110 @@
    
    function processInsertedDwgs(isMain = false) {
      // Convert JSON to Arduino code
-     if (isMain) {
-       filesToZip.push({filename: `pfodMainDrawing.h`, content: pfodMainDrawing_H(mainDwgName)});
-       filesToZip.push({filename: `pfodMainDrawing.cpp`, content: pfodMainDrawing_CPP(mainDwgName, insertedDwgs)});
+     if (isMain && currentConnectionType !== 'dwg-only') {
+       const dirPrefix = getDirPrefix();
+       filesToZip.push({filename: `${dirPrefix}pfodMainDrawing.h`, content: pfodMainDrawing_H(mainDwgName)});
+       filesToZip.push({filename: `${dirPrefix}pfodMainDrawing.cpp`, content: pfodMainDrawing_CPP(mainDwgName, insertedDwgs)});
      }
      console.log(`insertedDwgs length "${insertedDwgs.length}" `);
      if (insertedDwgs.length == 0) {
-       createAndDownloadZip(filesToZip, `Dwg_${mainDwgName}.zip`);
-       if (haveErrors) {
-          alert(`Error exporting drawing "${mainDwgName}" to Arduino format. See console for details.`);
-       }   
+       // Fetch and add the static files: pfodMainMenu.h, pfodMainMenu.cpp, and appropriate .ino file
+       fetchAndAddStaticFiles();
      } else {
         let drawingName = insertedDwgs.shift();
         console.log(`Process inserted dwg "${drawingName}" to Arduino format`);
-        exportDwg_ToArduino(drawingName, filesToZip, insertedDwgs); 
-     }  
+        exportDwg_ToArduino(drawingName, filesToZip, insertedDwgs);
+     }
+   }
+
+   function fetchAndAddStaticFiles() {
+     // Determine which files to fetch based on connection type
+     let filesToFetch = [];
+     let zipFilename = `${mainDwgName}_serial.zip`;
+     let dirPrefix = getDirPrefix();  // Use getDirPrefix() to get correct directory prefix
+     let inoFilename = `${mainDwgName}_serial.ino`;
+
+     if (currentConnectionType === 'serial') {
+       filesToFetch = [
+         { url: '/pfodMainMenu.h', filename: `${dirPrefix}pfodMainMenu.h` },
+         { url: '/pfodMainMenu.cpp', filename: `${dirPrefix}pfodMainMenu.cpp` },
+         { url: '/_pfodWeb__serial.ino', filename: `${dirPrefix}${inoFilename}` }
+       ];
+       zipFilename = `${mainDwgName}_serial.zip`;
+     } else if (currentConnectionType === 'ble') {
+       filesToFetch = [
+         { url: '/pfodMainMenu.h', filename: `${dirPrefix}pfodMainMenu.h` },
+         { url: '/pfodMainMenu.cpp', filename: `${dirPrefix}pfodMainMenu.cpp` },
+         { url: '/_ESP32__ble.ino', filename: `${dirPrefix}${mainDwgName}_ble.ino` }
+       ];
+       zipFilename = `${mainDwgName}_ble.zip`;
+     } else if (currentConnectionType === 'http') {
+       filesToFetch = [
+         { url: '/pfodMainMenu.h', filename: `${dirPrefix}pfodMainMenu.h` },
+         { url: '/pfodMainMenu.cpp', filename: `${dirPrefix}pfodMainMenu.cpp` },
+         { url: '/_ESP_Pico__http.ino', filename: `${dirPrefix}${mainDwgName}_http.ino` }
+       ];
+       zipFilename = `${mainDwgName}_http.zip`;
+     } else if (currentConnectionType === 'dwg-only') {
+       // For drawing files only, don't fetch any .ino or pfodMainMenu files
+       filesToFetch = [];
+       zipFilename = `Dwg_${mainDwgName}.zip`;
+       // Proceed directly to creating zip with drawing files only
+       createAndDownloadZip(filesToZip, zipFilename);
+       if (haveErrors) {
+         alert(`Error exporting drawing "${mainDwgName}" to Arduino format. See console for details.`);
+       }
+       return;
+     }
+
+     // Use Promise.allSettled to handle all requests, then create zip once
+     Promise.allSettled(filesToFetch.map(fileInfo =>
+       fetch(fileInfo.url)
+         .then(response => {
+           if (!response.ok) {
+             console.warn(`Warning: Could not fetch ${fileInfo.url}. File may not be available.`);
+             return { filename: fileInfo.filename, content: null };
+           }
+           return response.text().then(content => ({ filename: fileInfo.filename, content }));
+         })
+         .catch(error => {
+           console.warn(`Error fetching ${fileInfo.url}:`, error);
+           return { filename: fileInfo.filename, content: null };
+         })
+     )).then(results => {
+       // Add successfully loaded files to zip
+       results.forEach(result => {
+         if (result.status === 'fulfilled' && result.value.content !== null) {
+           filesToZip.push({filename: result.value.filename, content: result.value.content});
+           console.log(`Added ${result.value.filename} to zip`);
+         }
+       });
+
+       // Create zip once after all files are processed
+       createAndDownloadZip(filesToZip, zipFilename);
+       if (haveErrors) {
+         alert(`Error exporting drawing "${mainDwgName}" to Arduino format. See console for details.`);
+       }
+     });
    }
    
     function exportDwg_ToArduino(drawingName, filesToZip, insertedDwgs, isMain = false) {
         if (!drawingName) return;
-        
+
         try {
             console.log(`Exporting drawing "${drawingName}" to Arduino format`);
-            
+
             // Fetch the drawing data
             fetch(`/api/drawings/${drawingName}/data`)
             .then(response => response.json())
             .then(drawingData => {
-                // save the JSON data 
+                // save the JSON data
                let dwgName = drawingName.replace(/[^a-zA-Z0-9_]/g, '');
-               filesToZip.push({filename: `/json/${drawingName}.json`, content: JSON.stringify(drawingData,null,2)});
-               filesToZip.push({filename: `Dwg_${drawingName}.h`, content: convertJsonToArduino_H(drawingData)});
-               filesToZip.push({filename: `Dwg_${drawingName}.cpp`, content: convertJsonToArduino_CPP(drawingData,isMain)});               
+               const dirPrefix = getDirPrefix();
+
+               filesToZip.push({filename: `${dirPrefix}json/${drawingName}.json`, content: JSON.stringify(drawingData,null,2)});
+               filesToZip.push({filename: `${dirPrefix}Dwg_${drawingName}.h`, content: convertJsonToArduino_H(drawingData)});
+               filesToZip.push({filename: `${dirPrefix}Dwg_${drawingName}.cpp`, content: convertJsonToArduino_CPP(drawingData,isMain)});               
                 console.log(`Arduino code for drawing "${drawingName}" converted successfully`);
                 // look for insertedDwgs
                 if (Array.isArray(drawingData.items)) {
@@ -321,11 +449,11 @@ arduinoCode +=`// Dwg_${dwgName}.cpp  file ==============
 static Print* debugPtr = NULL;  // local to this file
 
 `;
-  if(isMain) {  //for all dwgs
+//  if(isMain) {  //for all dwgs
 arduinoCode +=`Dwg_${dwgName} dwg_${dwgName};
 
 `;
-  }
+ // }
 
 // ======= processing Code block =======================
 // include other dwg includes here
@@ -336,7 +464,7 @@ if (Array.isArray(drawingData.items)) {
       return;
    }
    arduinoCode += `#include "Dwg_${item.drawingName}.h"\n`;
-   arduinoCode += `Dwg_${item.drawingName} dwg_${item.drawingName};\n`;   
+  // arduinoCode += `Dwg_${item.drawingName} dwg_${item.drawingName};\n`;   
   });
 }
 arduinoCode += `\n`;
@@ -972,5 +1100,6 @@ function createAndDownloadZip(files, zipFilename = 'archive.zip') {
     console.log(`ZIP file "${zipFilename}" created and downloaded successfully`);
 }
 
-    // Browser environment - function is already available globally
+    // Browser environment - functions are available globally
     window.exportDrawingToArduino = exportDrawingToArduino;
+    window.showArduinoExportModal = showArduinoExportModal;

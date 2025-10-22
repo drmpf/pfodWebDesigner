@@ -572,7 +572,18 @@ function handlePfodWebCommand(req, res, cmdParam) {
     console.log(`[ENDPOINT] handlePfodWebCommand - cmdParam="${cmdParam}", allQuery=${JSON.stringify(req.query)}`);
     console.log(`[PFOD_WEB] Processing cmd: ${cmdParam}`);
     console.log(`[PFOD_WEB] Query parameters:`, req.query);
-    
+
+    // Strip any dedup chars before { and after }
+    const braceStart = cmdParam.indexOf('{');
+    const braceEnd = cmdParam.lastIndexOf('}');
+    if (braceStart !== -1 && braceEnd !== -1 && braceEnd > braceStart) {
+        const cleanedCmd = cmdParam.substring(braceStart, braceEnd + 1);
+        if (cmdParam !== cleanedCmd) {
+            console.log(`[PFOD_WEB] Stripped dedup chars - original: "${cmdParam}" -> cleaned: "${cleanedCmd}"`);
+            cmdParam = cleanedCmd;
+        }
+    }
+
     // Handle special startup command {.} - return drawing name
     if (cmdParam === '{.}') {
         console.log(`[PFOD_WEB] Startup command "{.}" detected - returning drawing name`);
@@ -2562,6 +2573,15 @@ app.post('/api/drawings/:tempName/temp-update', (req, res) => {
             });
             console.log(`[EDIT_DEBUG] Before replacement - items.length: ${items.length}`);
             console.log(`[EDIT_DEBUG] Item at editIndex ${editIndex} before replacement:`, JSON.stringify(items[editIndex]));
+
+            // Save old cmdName/idx values BEFORE replacing the item
+            const editingItem = items[editIndex];
+            const oldCmdName = editingItem?.cmdName;
+            const oldIdxName = editingItem?.idxName;
+
+            console.log(`[REFERENCE_UPDATE_DEBUG] Editing item at index ${editIndex}: type=${item.type}, oldIdxName="${oldIdxName}", newIdxName="${item.idxName}", oldCmdName="${oldCmdName}", newCmdName="${item.cmdName}"`);
+
+            // Now replace the item
             items[editIndex] = item;
             console.log(`[EDIT_DEBUG] After replacement - items.length: ${items.length}`);
             console.log(`[EDIT_DEBUG] Item at editIndex ${editIndex} after replacement:`, JSON.stringify(items[editIndex]));
@@ -2576,7 +2596,79 @@ app.post('/api/drawings/:tempName/temp-update', (req, res) => {
               console.log(`[UPDATE_IDX]   ${index}: ${item.type}${item.cmdName ? `(cmdName=${item.cmdName})` : ''}${item.cmd ? `(cmd=${item.cmd})` : '(no_cmd)'}${item.idxName ? `(idxName=${item.idxName})` : ''}`);
             });
 
-            console.log(`Replacing item at index ${editIndex} item.type:${item.type}`);
+            // If cmdName or idxName changed, update all references throughout the drawing
+            if (oldCmdName && oldCmdName !== item.cmdName) {
+                console.log(`[REFERENCE_UPDATE] Updating cmdName references from "${oldCmdName}" to "${item.cmdName}"`);
+                let updateCount = 0;
+                items.forEach((refItem, refIndex) => {
+                    // Update any top-level item with matching cmdName (regardless of type)
+                    if (refItem.cmdName === oldCmdName) {
+                        console.log(`[REFERENCE_UPDATE] Updated ${refItem.type} at index ${refIndex} cmdName from "${oldCmdName}" to "${item.cmdName}"`);
+                        refItem.cmdName = item.cmdName;
+                        updateCount++;
+                    }
+
+                    // Update nested items (action items in touchAction, actionInputs in touchAction, etc.)
+                    if (refItem.action && Array.isArray(refItem.action)) {
+                        refItem.action.forEach((nestedItem, nestedIndex) => {
+                            if (nestedItem.cmdName === oldCmdName) {
+                                console.log(`[REFERENCE_UPDATE] Updated nested item [${nestedIndex}] in ${refItem.type} cmdName from "${oldCmdName}" to "${item.cmdName}"`);
+                                nestedItem.cmdName = item.cmdName;
+                                updateCount++;
+                            }
+                        });
+                    }
+
+                    // Update nested actionInputs (touchActionInput inside touchAction)
+                    if (refItem.actionInputs && Array.isArray(refItem.actionInputs)) {
+                        refItem.actionInputs.forEach((nestedInput, nestedIndex) => {
+                            if (nestedInput.cmdName === oldCmdName) {
+                                console.log(`[REFERENCE_UPDATE] Updated nested actionInput [${nestedIndex}] in ${refItem.type} cmdName from "${oldCmdName}" to "${item.cmdName}"`);
+                                nestedInput.cmdName = item.cmdName;
+                                updateCount++;
+                            }
+                        });
+                    }
+                });
+                console.log(`[REFERENCE_UPDATE] Total cmdName references updated: ${updateCount}`);
+            }
+
+            if (oldIdxName && oldIdxName !== item.idxName) {
+                console.log(`[REFERENCE_UPDATE] Updating idxName references from "${oldIdxName}" to "${item.idxName}"`);
+                let updateCount = 0;
+                items.forEach((refItem, refIndex) => {
+                    // Update any top-level item with matching idxName (regardless of type)
+                    if (refItem.idxName === oldIdxName) {
+                        console.log(`[REFERENCE_UPDATE] Updated ${refItem.type} at index ${refIndex} idxName from "${oldIdxName}" to "${item.idxName}"`);
+                        refItem.idxName = item.idxName;
+                        updateCount++;
+                    }
+
+                    // Update nested items (action items in touchAction, actionInputs in touchAction, etc.)
+                    if (refItem.action && Array.isArray(refItem.action)) {
+                        refItem.action.forEach((nestedItem, nestedIndex) => {
+                            if (nestedItem.idxName === oldIdxName) {
+                                console.log(`[REFERENCE_UPDATE] Updated nested item [${nestedIndex}] in ${refItem.type} idxName from "${oldIdxName}" to "${item.idxName}"`);
+                                nestedItem.idxName = item.idxName;
+                                updateCount++;
+                            }
+                        });
+                    }
+
+                    // Update nested actionInputs (touchActionInput inside touchAction)
+                    if (refItem.actionInputs && Array.isArray(refItem.actionInputs)) {
+                        refItem.actionInputs.forEach((nestedInput, nestedIndex) => {
+                            if (nestedInput.idxName === oldIdxName) {
+                                console.log(`[REFERENCE_UPDATE] Updated nested actionInput [${nestedIndex}] in ${refItem.type} idxName from "${oldIdxName}" to "${item.idxName}"`);
+                                nestedInput.idxName = item.idxName;
+                                updateCount++;
+                            }
+                        });
+                    }
+                });
+                console.log(`[REFERENCE_UPDATE] Total idxName references updated: ${updateCount}`);
+            }
+
             if (item.type == 'touchZone') {
               let touchZone = item;
               console.log(`Replacing touchZone, update cmdName, looking for cmd:${touchZone.cmd}`);

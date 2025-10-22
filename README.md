@@ -1,5 +1,10 @@
 # pfodWebDesigner
-This is a web base design tool to create interactive and responsive GUIs that can be served from your micro to either pfodApp and pfodWeb.  
+This is a web base design tool to create interactive and responsive GUIs that can be served from your micro to either pfodApp and pfodWeb.<br>
+_**Using Serial any Arduino board can have an interactive GUI.**_<br>
+It generates complete Arduino sketches that can connect to pfodWeb.html via **Serial, BLE or HTTP**.  
+  
+
+pfodWeb.html is included in the Arduino pfodParser library (V3.66+)
 
 This code package includes all the necessary npm modules. Just install nodejs and then run one of the pfodWebDesigner batch files.  
 
@@ -8,11 +13,11 @@ This code package includes all the necessary npm modules. Just install nodejs an
 <img src="./gif/Slider.gif"/>  
 <img src="./gif/LedNoOffGUI.gif"/>
 
-This animated gif shows a button controlling the ESP32 micro's led from a web page. 
+This animated gif shows a button controlling the Arduino board led from a web page. 
 When the button is pressed, it immediately changes color to indicate it has been triggered.
-It also sends a command to the ESP32 to switch the LED. When the ESP32 responds, the message from the ESP32 updates the button's color and text.  
+It also sends a command to the board to switch the LED. When the board responds, the message to pfodWeb updates the button's color and text.  
 
-The entire code for the webpage is served from the ESP32's web server.  No third party or internet access is required.
+The entire code that defines this GUI is contained in the Arduino sketch.
 
 # How-To
 See [pfodWeb Installation and Tutorials](https://www.forward.com.au/pfod/pfodWeb/index.html)  
@@ -33,6 +38,7 @@ This code may be freely used for both private and commercial use
 Provide this copyright is maintained.  
 
 # Revisions
+Version 2.0.0 added support for Serial, BLE and HTTP code generation
 Version 1.1.5 added init() of drawings  
 Version 1.1.4 added pfodMainDrawing.h to generated output files  
 Version 1.1.3 drawing updates as response received and included dependent node packages and removed package install script from batch files  

@@ -445,15 +445,15 @@ document.addEventListener('DOMContentLoaded', () => {
     if (itemIdxName) {
         itemIdxName.addEventListener('blur', function() {
             if (itemIdxEnable.checked && itemIdxName.value.trim()) {
-            //    if (!isIndexNameUnique(itemIdxName.value.trim())) {
-            //        itemIdxName.style.borderColor = 'red';
-            //        itemIdxName.style.backgroundColor = '#ffebee';
-            //        itemIdxName.title = 'This index name is already in use. Please choose a different name.';
-            //    } else {
+                if (!isIndexNameUnique(itemIdxName.value.trim())) {
+                    itemIdxName.style.borderColor = 'red';
+                    itemIdxName.style.backgroundColor = '#ffebee';
+                    itemIdxName.title = 'This index name is already in use. Please choose a different name.';
+                } else {
                     itemIdxName.style.borderColor = '';
                     itemIdxName.style.backgroundColor = '';
                     itemIdxName.title = '';
-            //    }
+                }
             }
         });
         
@@ -1546,19 +1546,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.error('Index name is required when indexed is enabled');
                     return;
                 }
-                
-                // Validate that name is unique  SKIP THIS TEST SO YOU CAN ADD INDEX AND ITEM
-          //      if (!isIndexNameUnique(itemIdxName.value.trim())) {
-          //          console.error('Index name must be unique');
+
+                // Validate that name is unique
+                if (!isIndexNameUnique(itemIdxName.value.trim())) {
+                    console.error('Index name must be unique');
                     // Add visual feedback for duplicate name
-          //          itemIdxName.style.borderColor = 'red';
-          //          itemIdxName.title = 'This index name is already in use. Please choose a different name.';
-          //          return;
-          //      } else {
+                    itemIdxName.style.borderColor = 'red';
+                    itemIdxName.title = 'This index name is already in use. Please choose a different name.';
+                    return;
+                } else {
                     // Reset visual feedback if name is valid
                     itemIdxName.style.borderColor = '';
                     itemIdxName.title = '';
-          //      }
+                }
                 
                 tempItem.indexed = true;
                 tempItem.idxName = itemIdxName.value.trim();
@@ -1775,13 +1775,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     alert('Index name is required when Use Index is enabled');
                     return;
                 }
-                
+
                 // Validate that name is unique
-            //    if (!isIndexNameUnique(itemIdxName.value.trim())) {
-            //        alert('Index name must be unique. Please choose a different name.');
-            //        return;
-            //    }
-                
+                if (!isIndexNameUnique(itemIdxName.value.trim())) {
+                    alert('Index name must be unique. Please choose a different name.');
+                    return;
+                }
+
                 newItem.indexed = true;
                 newItem.idxName = itemIdxName.value.trim();
                 // Numeric index is the row number where this item will be added (items are added at the end)

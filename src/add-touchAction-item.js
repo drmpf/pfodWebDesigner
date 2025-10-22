@@ -784,12 +784,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // Get cmdName from URL params for title
             const cmdName = params.get('cmdName');
             const displayName = cmdName;
-            document.title = `Edit touchAction Item for touchZone ${displayName} (Index ${editingItem.idx})`;
+            document.title = `Edit touchAction Item for touchZone ${displayName}`;
             
             // Update page heading if it exists - use HTML for line break
             const pageHeading = document.querySelector('h1');
             if (pageHeading) {
-                pageHeading.innerHTML = `Edit touchAction Item for touchZone ${displayName}<br>(Index ${editingItem.idx})`;
+                pageHeading.innerHTML = `Edit touchAction Item for touchZone ${displayName}`;
             }
         })
         .catch(error => {
@@ -1717,9 +1717,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const pageTitle = document.querySelector('h1');
             const cmdName = params.get('cmdName');
             if (pageTitle) {
-                pageTitle.innerHTML = `Step 2 of 2: Add touchAction Item for touchZone ${cmdName}<br>(Index ${lockedIndexName})`;
+                pageTitle.innerHTML = `Step 2 of 2: Add touchAction Item for touchZone ${cmdName}`;
             }
-            document.title = `Add touchAction Item for touchZone ${cmdName} - Index ${lockedIndexName}`;
+            document.title = `Add touchAction Item for touchZone ${cmdName}`;
         } else if (isEditMode && editingItem && editingItem.idxName) {
             // Pre-populate with existing item's index name in edit mode
             itemIdx.value = editingItem.idxName;
