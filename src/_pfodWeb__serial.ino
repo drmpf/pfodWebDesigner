@@ -5,7 +5,6 @@
    This code is not warranted to be fit for any purpose. You may only use it at your own risk.
    This generated code may be freely used for both private and commercial use
    provided this copyright is maintained.
-
 */
 
 /**
@@ -28,7 +27,7 @@
 */
 
 // download the libraries from http://www.forward.com.au/pfod/pfodParserLibraries/index.html
-// pfodParser.zip V3.65+ contains pfodParser, pfodSecurity, pfodDelay, pfodBLEBufferedSerial, pfodSMS and pfodRadio
+// pfodParser.zip V3.66+ contains pfodParser, pfodSecurity, pfodDelay, pfodBLEBufferedSerial, pfodSMS and pfodRadio
 #include <pfodParser.h>
 
 #include <pfodDebugPtr.h>
@@ -38,7 +37,6 @@ pfodParser parser("V1");                  // create a parser with menu version s
 
 static Stream* debugPtr = NULL;
 const char version[] = "V1";  // need non blank version for auto refresh
-
 
 // the setup routine runs once on reset:
 void setup() {
@@ -55,10 +53,13 @@ void setup() {
   // <<<<<<<<< Your extra setup code goes here
 }
 
+void handle_parser() {
+  handle_pfodMainMenu(parser);
+}
 
 // the loop routine runs over and over again forever:
 void loop() {
-  handle_pfodMainMenu(parser);
+  handle_parser();
   //  <<<<<<<<<<<  Your other loop() code goes here
 }
 

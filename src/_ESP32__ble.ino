@@ -5,7 +5,6 @@
    This code is not warranted to be fit for any purpose. You may only use it at your own risk.
    This generated code may be freely used for both private and commercial use
    provided this copyright is maintained.
-
 */
 
 /**
@@ -34,7 +33,7 @@
 #include <BLE2902.h>
 
 // download the libraries from http://www.forward.com.au/pfod/pfodParserLibraries/index.html
-// pfodParser.zip V3.65+ contains pfodParser, pfodSecurity, pfodDelay, pfodBLEBufferedSerial, pfodSMS and pfodRadio
+// pfodParser.zip V3.66+ contains pfodParser, pfodSecurity, pfodDelay, pfodBLEBufferedSerial, pfodSMS and pfodRadio
 #include <pfodParser.h>
 
 #include <pfodBLEBufferedSerial.h>  // used to prevent flooding bluetooth sends
@@ -43,7 +42,7 @@
 #include "pfodMainMenu.h"
 
 // =========== pfodBLESerial definitions
-const char* localName = "pfod_LedOnOff";  // <<<<<<  change this string to customize the adverised name of your board
+const char* localName = "pfodWeb_ble";  // <<<<<<  change this string to customize the adverised name of your board
 class pfodBLESerial : public Stream, public BLEServerCallbacks, public BLECharacteristicCallbacks {
 public:
   pfodBLESerial();
@@ -94,58 +93,11 @@ pfodParser parser("V1");                  // create a parser with menu version s
 pfodBLESerial bleSerial;                  // create a BLE serial connection
 pfodBLEBufferedSerial bleBufferedSerial;  // create a BLE serial connection
 
-unsigned long plot_mSOffset = 0;  // set by {@} response
-bool clearPlot = false;           // set by the {@} response code
-
-// give the board pins names, if you change the pin number here you will change the pin controlled
-int cmd_A_var;            // name the variable for 'Led'
-const int cmd_A_pin = 5;  // name the output 5 for 'Led'
-
-// initialize digital pin for the LED
-const int ledPin = LED_BUILTIN;
-bool ledIsOn = false;
-#ifdef ESP8266
-bool highIsOn = false;
-#else
-bool highIsOn = true;
-#endif
-
-// these fns call from the button code
-void turnLedOff() {
-  if (highIsOn) {
-    digitalWrite(ledPin, LOW);
-  } else {
-    digitalWrite(ledPin, HIGH);
-  }
-  ledIsOn = false;
-}
-
-void turnLedOn() {
-  if (highIsOn) {
-    digitalWrite(ledPin, HIGH);
-  } else {
-    digitalWrite(ledPin, LOW);
-  }
-  ledIsOn = true;
-}
-
-bool isLedOn() {
-  return ledIsOn;
-}
-
 static Stream* debugPtr = NULL;
-
-
 const char version[] = "V1";  // need non blank version for auto refresh
-
 
 // the setup routine runs once on reset:
 void setup() {
-  cmd_A_var = 0;
-  // ledcAttachPin(cmd_A_pin,cmd_A_channel); // assign pin to channel
-  // ledcSetup(cmd_A_channel, 490, 8); // 490hz PWM, 8-bit resolution to match Arduino Uno
-  // pfodESP32Utils::analogWrite(cmd_A_channel,cmd_A_var); // set PWM output
-
   Serial.begin(115200);
   for (int i = 10; i > 0; i--) {
     Serial.print(i);
@@ -154,10 +106,8 @@ void setup() {
   }
   Serial.println();
 
-
   setDebugPtr(&Serial);      //set global debug
   debugPtr = getDebugPtr();  // enable extra debug here
-
 
   // Create the BLE Device
   BLEDevice::init(localName);
@@ -185,14 +135,15 @@ void setup() {
 
   init_pfodMainMenu();
   // <<<<<<<<< Your extra setup code goes here
-  // initialize digital pin LED_BUILTIN as an output.
-  pinMode(ledPin, OUTPUT);
 }
 
+void handle_parser() {
+  handle_pfodMainMenu(parser);
+}
 
 // the loop routine runs over and over again forever:
 void loop() {
-  handle_pfodMainMenu(parser);
+  handle_parser();
   //  <<<<<<<<<<<  Your other loop() code goes here
 }
 

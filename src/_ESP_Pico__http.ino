@@ -75,48 +75,13 @@ IPAddress staticIP;  // use auto assigned ip. NOT recommended
 #include <ESP_PicoW_pfodAppServer.h>
 #include "pfodMainMenu.h"
 
-// initialize digital pin for the LED
-const int ledPin = LED_BUILTIN;
-bool ledIsOn = false;
-#ifdef ESP8266
-bool highIsOn = false;
-#else
-bool highIsOn = true;
-#endif
-
-// these fns call from the button code
-void turnLedOff() {
-  if (highIsOn) {
-    digitalWrite(ledPin, LOW);
-  } else {
-    digitalWrite(ledPin, HIGH);
-  }
-  ledIsOn = false;
-}
-
-void turnLedOn() {
-  if (highIsOn) {
-    digitalWrite(ledPin, HIGH);
-  } else {
-    digitalWrite(ledPin, LOW);
-  }
-  ledIsOn = true;
-}
-
-bool isLedOn() {
-  return ledIsOn;
-}
-
 static Stream *debugPtr = NULL;
-
-
 const char version[] = "V1";  // need non blank version for auto refresh
 
 // if running under PicoProbe debugging move Serial to Serial1
 #ifdef PICO_PROBE
 #define Serial Serial1
 #endif
-
 
 /**
    sets up WiFi
@@ -177,16 +142,19 @@ void setup(void) {
   setDebugPtr(&Serial);      //set global debug
   debugPtr = getDebugPtr();  // enable extra debug here
 
-  // initialize digital pin LED_BUILTIN as an output.
-  pinMode(ledPin, OUTPUT);
-
   setupWiFi();
   init_pfodMainMenu(closeConnection_pfodAppServer); // initialize dwgs and set the closeConnection fn ptr
   start_pfodWebServer(version, useLittleFSToServe_pfodWeb);
   start_pfodAppServer(version);
+  // <<<<<<<<< Your extra setup code goes here
+}
+
+void handle_parser() {
+  handle_pfodAppServer();
+  handle_pfodWebServer();
 }
 
 void loop(void) {
-  handle_pfodAppServer();
-  handle_pfodWebServer();
+  handle_parser()
+  // <<<<<<<<< Your extra loop code goes here
 }
