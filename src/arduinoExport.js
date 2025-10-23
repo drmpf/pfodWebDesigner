@@ -20,6 +20,7 @@
      let mainDwgName;
      let haveErrors = false;
      let currentConnectionType = 'serial'; // default connection type
+     let missingDrawings = []; // Track missing drawings during export
 
 // Helper function to get directory prefix based on connection type
     function getDirPrefix() {
@@ -83,27 +84,95 @@
       filesToZip = [];
       insertedDwgs = [];
       haveErrors = false;
-     // now add all the insertDwg's
-     exportDwg_ToArduino(drawingName, filesToZip, insertedDwgs, true); // this is the main one
-
+      missingDrawings = []; // Reset missing drawings list
+     // First pass: Collect ALL nested insertDwgs recursively before generating any code
+     collectAllInsertedDwgs(drawingName, new Set(), (allDwgs) => {
+       // All drawings collected, now export them
+       insertedDwgs = Array.from(allDwgs);
+       console.log(`[ARDUINO_EXPORT] Collected ALL nested drawings: ${JSON.stringify(insertedDwgs)}`);
+       exportAllDwgsToArduino(drawingName, filesToZip, insertedDwgs, true); // this is the main one
+     });
    }
-   
-   function processInsertedDwgs(isMain = false) {
-     // Convert JSON to Arduino code
+
+   // Recursively collect all inserted drawings (nested and deeply nested)
+   // Note: Missing drawings are tracked but not considered errors - export continues
+   function collectAllInsertedDwgs(drawingName, collected, callback) {
+     fetch(`/api/drawings/${drawingName}/data`)
+     .then(response => {
+       if (!response.ok) {
+         throw new Error(`Drawing not found: ${response.status}`);
+       }
+       return response.json();
+     })
+     .then(drawingData => {
+       // Add this drawing to collected (skip the main one initially, add from references)
+       if (drawingName !== mainDwgName || collected.size > 0) {
+         collected.add(drawingName);
+       }
+
+       // Find all insertDwgs in this drawing
+       let foundDwgs = [];
+       if (Array.isArray(drawingData.items)) {
+         drawingData.items.forEach(item => {
+           if (item && item.type === 'insertDwg' && !collected.has(item.drawingName)) {
+             foundDwgs.push(item.drawingName);
+             collected.add(item.drawingName);
+           }
+         });
+       }
+
+       // Recursively collect from each found drawing
+       if (foundDwgs.length === 0) {
+         // No more drawings to process
+         callback(collected);
+       } else {
+         // Process each found drawing
+         let processed = 0;
+         foundDwgs.forEach(dwg => {
+           collectAllInsertedDwgs(dwg, collected, (result) => {
+             processed++;
+             if (processed === foundDwgs.length) {
+               callback(collected);
+             }
+           });
+         });
+       }
+     })
+     .catch(error => {
+       console.error(`Warning: Could not fetch drawing "${drawingName}":`, error);
+       // Track the missing drawing but continue
+       if (!missingDrawings.includes(drawingName)) {
+         missingDrawings.push(drawingName);
+       }
+       callback(collected);
+     });
+   }
+
+   // Export all collected drawings (main + all nested insertDwgs)
+   function exportAllDwgsToArduino(drawingName, filesToZip, allInsertedDwgs, isMain = false) {
+     const dirPrefix = getDirPrefix();
+
+     // Generate pfodMainDrawing files ONCE with complete list of ALL nested drawings
      if (isMain && currentConnectionType !== 'dwg-only') {
-       const dirPrefix = getDirPrefix();
+       console.log(`[ARDUINO_EXPORT] Generating pfodMainDrawing with ${allInsertedDwgs.length} nested drawings`);
        filesToZip.push({filename: `${dirPrefix}pfodMainDrawing.h`, content: pfodMainDrawing_H(mainDwgName)});
-       filesToZip.push({filename: `${dirPrefix}pfodMainDrawing.cpp`, content: pfodMainDrawing_CPP(mainDwgName, insertedDwgs)});
+       filesToZip.push({filename: `${dirPrefix}pfodMainDrawing.cpp`, content: pfodMainDrawing_CPP(mainDwgName, allInsertedDwgs)});
      }
-     console.log(`insertedDwgs length "${insertedDwgs.length}" `);
-     if (insertedDwgs.length == 0) {
-       // Fetch and add the static files: pfodMainMenu.h, pfodMainMenu.cpp, and appropriate .ino file
-       fetchAndAddStaticFiles();
-     } else {
-        let drawingName = insertedDwgs.shift();
-        console.log(`Process inserted dwg "${drawingName}" to Arduino format`);
-        exportDwg_ToArduino(drawingName, filesToZip, insertedDwgs);
-     }
+
+     // Now export each drawing (main + all nested)
+     const allDrawingsToExport = [drawingName, ...allInsertedDwgs];
+     console.log(`[ARDUINO_EXPORT] Exporting ${allDrawingsToExport.length} drawings: ${JSON.stringify(allDrawingsToExport)}`);
+
+     let processed = 0;
+     allDrawingsToExport.forEach(dwg => {
+       exportDwg_ToArduino_OneOnly(dwg, filesToZip, () => {
+         processed++;
+         if (processed === allDrawingsToExport.length) {
+           // All drawings exported
+           fetchAndAddStaticFiles();
+         }
+       });
+     });
    }
 
    function fetchAndAddStaticFiles() {
@@ -140,8 +209,8 @@
        zipFilename = `Dwg_${mainDwgName}.zip`;
        // Proceed directly to creating zip with drawing files only
        createAndDownloadZip(filesToZip, zipFilename);
-       if (haveErrors) {
-         alert(`Error exporting drawing "${mainDwgName}" to Arduino format. See console for details.`);
+       if (missingDrawings.length > 0) {
+         alert(`Arduino export completed.\n\nWarning: The following drawings are not loaded and so could not be exported:\n${missingDrawings.join(', ')}\n\nThe exported files will not include these drawings.`);
        }
        return;
      }
@@ -171,62 +240,65 @@
 
        // Create zip once after all files are processed
        createAndDownloadZip(filesToZip, zipFilename);
-       if (haveErrors) {
-         alert(`Error exporting drawing "${mainDwgName}" to Arduino format. See console for details.`);
+       if (missingDrawings.length > 0) {
+         alert(`Arduino export completed.\n\nWarning: The following drawings are not loaded and so could not be exported:\n${missingDrawings.join(', ')}\n\nThe exported files will not include these drawings.`);
        }
      });
    }
    
-    function exportDwg_ToArduino(drawingName, filesToZip, insertedDwgs, isMain = false) {
-        if (!drawingName) return;
+   // Export a single drawing without collecting nested drawings
+   // Used by exportAllDwgsToArduino after all drawings have been collected
+   function exportDwg_ToArduino_OneOnly(drawingName, filesToZip, callback) {
+     if (!drawingName) {
+       callback();
+       return;
+     }
 
-        try {
-            console.log(`Exporting drawing "${drawingName}" to Arduino format`);
+     try {
+       console.log(`[ARDUINO_EXPORT] Exporting single drawing "${drawingName}" to Arduino format`);
 
-            // Fetch the drawing data
-            fetch(`/api/drawings/${drawingName}/data`)
-            .then(response => response.json())
-            .then(drawingData => {
-                // save the JSON data
-               let dwgName = drawingName.replace(/[^a-zA-Z0-9_]/g, '');
-               const dirPrefix = getDirPrefix();
+       // Fetch the drawing data
+       fetch(`/api/drawings/${drawingName}/data`)
+       .then(response => {
+         if (!response.ok) {
+           throw new Error(`Drawing not found: ${response.status}`);
+         }
+         return response.json();
+       })
+       .then(drawingData => {
+         // save the JSON data
+         let dwgName = drawingName.replace(/[^a-zA-Z0-9_]/g, '');
+         const dirPrefix = getDirPrefix();
 
-               filesToZip.push({filename: `${dirPrefix}json/${drawingName}.json`, content: JSON.stringify(drawingData,null,2)});
-               filesToZip.push({filename: `${dirPrefix}Dwg_${drawingName}.h`, content: convertJsonToArduino_H(drawingData)});
-               filesToZip.push({filename: `${dirPrefix}Dwg_${drawingName}.cpp`, content: convertJsonToArduino_CPP(drawingData,isMain)});               
-                console.log(`Arduino code for drawing "${drawingName}" converted successfully`);
-                // look for insertedDwgs
-                if (Array.isArray(drawingData.items)) {
-                    drawingData.items.forEach(item => {
-                        if (!item || !item.type || !(item.type === 'insertDwg')) {
-                          return;
-                        }
-            console.log(`found inserted drawing "${item.drawingName}"`);
-                        insertedDwgs.push(item.drawingName);
-                    });
-                 }
-                 setTimeout(() => {
-                    processInsertedDwgs(isMain);
-                }, 10);
+         filesToZip.push({filename: `${dirPrefix}json/${drawingName}.json`, content: JSON.stringify(drawingData,null,2)});
+         filesToZip.push({filename: `${dirPrefix}Dwg_${drawingName}.h`, content: convertJsonToArduino_H(drawingData)});
+         filesToZip.push({filename: `${dirPrefix}Dwg_${drawingName}.cpp`, content: convertJsonToArduino_CPP(drawingData, false)});
+         console.log(`[ARDUINO_EXPORT] Arduino code for drawing "${drawingName}" converted successfully`);
+         callback();
+       })
+       .catch(error => {
+         console.error(`Warning: Could not export drawing "${drawingName}":`, error);
+         // Track missing drawing but continue with export
+         if (!missingDrawings.includes(drawingName)) {
+           missingDrawings.push(drawingName);
+         }
+         callback();
+       });
+     } catch (error) {
+       console.error(`Error exporting drawing "${drawingName}" to Arduino:`, error);
+       // Track missing drawing but continue
+       if (!missingDrawings.includes(drawingName)) {
+         missingDrawings.push(drawingName);
+       }
+       callback();
+     }
+   }
 
-            })
-            .catch(error => {
-                console.error(`Error fetching drawing data for "${drawingName}":`, error);
-                haveErrors = true;
-                setTimeout(() => {
-                    processInsertedDwgs(isMain);
-                }, 10);
-
-            });
-        } catch (error) {
-            console.error(`Error exporting drawing "${drawingName}" to Arduino:`, error);
-            haveErrors = true;
-                setTimeout(() => {
-                    processInsertedDwgs(isMain);
-                }, 10);
-        }
-        return
-    }
+   // DEPRECATED: Keep this for backward compatibility with any remaining references
+   function exportDwg_ToArduino(drawingName, filesToZip, insertedDwgs, isMain = false) {
+     console.warn(`[ARDUINO_EXPORT] WARNING: exportDwg_ToArduino is deprecated, use exportDwg_ToArduino_OneOnly instead`);
+     exportDwg_ToArduino_OneOnly(drawingName, filesToZip, () => {});
+   }
    
     
 //=================================== pfodMainDrawing.h ==============================

@@ -155,6 +155,6 @@ void handle_parser() {
 }
 
 void loop(void) {
-  handle_parser()
+  handle_parser();
   // <<<<<<<<< Your extra loop code goes here
 }
