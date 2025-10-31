@@ -1451,10 +1451,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 // If in edit mode and editing an insertDwg item, add current drawing back to the list
                 if (isEditMode && editingItem && editingItem.type === 'insertDwg' && editingItem.drawingName) {
                     const currentDrawingName = editingItem.drawingName;
-                    
+
                     // Check if the current drawing already exists in the list (shouldn't, but just in case)
                     const existingOption = Array.from(insertDwgName.options).find(option => option.value === currentDrawingName);
-                    
+
                     if (!existingOption) {
                         // Check if the drawing still exists on the server
                         fetch(`/api/drawings/${encodeURIComponent(currentDrawingName)}/exists`)
@@ -1462,7 +1462,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             .then(existsData => {
                                 const option = document.createElement('option');
                                 option.value = currentDrawingName;
-                                
+
                                 if (existsData.exists) {
                                     // Drawing exists on server
                                     const dimensions = existsData.dimensions ? `${existsData.dimensions.width}x${existsData.dimensions.height}` : 'unknown size';
@@ -1473,14 +1473,17 @@ document.addEventListener('DOMContentLoaded', () => {
                                     option.style.color = 'red';
                                     option.style.fontStyle = 'italic';
                                 }
-                                
+
                                 // Add to the beginning of the list
                                 insertDwgName.insertBefore(option, insertDwgName.firstChild);
-                                
+
                                 // Select the current drawing
                                 insertDwgName.value = currentDrawingName;
-                                
+
                                 console.log(`Added current insertDwg drawing "${currentDrawingName}" back to list`);
+
+                                // Call callback AFTER current drawing is selected (critical for edit mode!)
+                                callback();
                             })
                             .catch(error => {
                                 console.error('Error checking if drawing exists:', error);
@@ -1492,15 +1495,19 @@ document.addEventListener('DOMContentLoaded', () => {
                                 option.style.fontStyle = 'italic';
                                 insertDwgName.insertBefore(option, insertDwgName.firstChild);
                                 insertDwgName.value = currentDrawingName;
+
+                                // Call callback AFTER current drawing is selected
+                                callback();
                             });
                     } else {
                         // Current drawing already in list, just select it
                         insertDwgName.value = currentDrawingName;
+
+                        // Call callback AFTER current drawing is selected
+                        callback();
                     }
-                }
-                
-                // Call callback if provided
-                if (callback && typeof callback === 'function') {
+                } else {
+                    // Not in edit mode or no current drawing, call callback immediately
                     callback();
                 }
             })

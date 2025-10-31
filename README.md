@@ -38,6 +38,10 @@ This code may be freely used for both private and commercial use
 Provide this copyright is maintained.  
 
 # Revisions
+Version 2.0.4 fixed scaling for nested dwgs   
+Version 2.0.3 fixed transform for nested dwgs   
+Version 2.0.2 fixed transform pushZero for nested dwgs   
+Version 2.0.1 edit to .ino files   
 Version 2.0.0 added support for Serial, BLE and HTTP code generation
 Version 1.1.5 added init() of drawings  
 Version 1.1.4 added pfodMainDrawing.h to generated output files  

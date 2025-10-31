@@ -54,15 +54,27 @@
             border-radius: 3px;
             margin: 5px 0;
         }
+        .footer-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .copyright-text {
+            margin: 0;
+            font-size: 14px;
+            color: #666;
+        }
         #message-overlay .button {
             display: inline-block;
             background-color: #4CAF50;
             color: white;
             padding: 10px 20px;
             border-radius: 5px;
-            margin-top: 20px;
             text-decoration: none;
             font-weight: bold;
+            margin: 0;
         }
     </style>
 </head>
@@ -70,8 +82,10 @@
     <div id="message-overlay">
         <h1 class="title">pfodWeb Designer</h1>
         <p id="version-text">Loading version...</p>
-        <p>(c)2025 <a href="https://www.forward.com.au/pfod/pfodWeb" target="_blank">https://www.forward.com.au/pfod/pfodWeb</a>
-        <a href="/control" class="button">Go to Control Panel</a>
+        <div class="footer-container">
+            <p class="copyright-text">(c)2025 <a href="https://www.forward.com.au/pfod/pfodWeb" target="_blank">https://www.forward.com.au/pfod/pfodWeb</a></p>
+            <a href="/control" class="button">Go to Control Panel</a>
+        </div>
     </div>
 <script src="version.js"></script>
 <script>

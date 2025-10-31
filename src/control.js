@@ -533,15 +533,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     },
                     body: JSON.stringify({ mainDrawing: selectedDrawingName })
                 });
-                
+
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
-                
+
                 console.log(`Main drawing set to: ${selectedDrawingName}`);
-                
-                // Step 1: First save a backup 
-                saveDrawingAsDeletedJson(selectedDrawingName);
+
+                // Step 1: First unload the selected drawing
+                // Step 2: Then check for inserted drawings and prompt to unload them too
+                await unloadDrawingAndCheckForInserted(selectedDrawingName);
             } catch (error) {
                 console.error('Error setting main drawing:', error);
                 alert(`Error setting main drawing: ${error.message}`);
@@ -555,116 +556,92 @@ document.addEventListener('DOMContentLoaded', () => {
     // Version editing removed as per requirements
     
     // Function to save a drawing as deleted JSON (Step 1 of deletion)
+    // Returns a Promise that resolves when the backup is complete
     function saveDrawingAsDeletedJson(drawingName) {
-        if (!drawingName) return;
-        
-        try {
-            // First, save the drawing as drawing_deleted.json
-            console.log(`Step 1: Saving backup of drawing "${drawingName}" before unloading`);
-            
-            // Create backup filename
-            const backupFilename = `${drawingName}_unloaded.json`;
-            
-            // Fetch the export data first, then trigger download and deletion
-            fetch(`/api/drawings/${drawingName}/export?filename=${backupFilename}`)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`Export failed: ${response.status}`);
-                    }
-                    return response.text();
-                })
-                .then(exportData => {
-                    // Create and trigger download with the fetched data
-                    const blob = new Blob([exportData], { type: 'application/json' });
-                    const downloadUrl = URL.createObjectURL(blob);
-                    const backupLink = document.createElement('a');
-                    backupLink.href = downloadUrl;
-                    backupLink.download = backupFilename;
-                    document.body.appendChild(backupLink);
-                    backupLink.click();
-                    document.body.removeChild(backupLink);
-                    URL.revokeObjectURL(downloadUrl);
-                    
-                    // Only delete after successful backup
-                    console.log(`Step 1 completed: Backup saved as ${backupFilename}`);
-                    deleteDrawingFromServer(drawingName);
-                })
-                .catch(error => {
-                    console.error('Error creating backup before deletion:', error);
-                    alert(`Failed to create backup before unload: ${error.message}`);
-                });
-/**            
-            // Show a success message with button to complete deletion
-            const confirmDeleteBtn = document.createElement('button');
-            confirmDeleteBtn.innerHTML = `Complete deletion of "${drawingName}"`;
-            confirmDeleteBtn.className = 'clear-data-btn';
-            confirmDeleteBtn.style.margin = '10px';
-            confirmDeleteBtn.onclick = function() {
-                deleteDrawingFromServer(drawingName);
-                document.body.removeChild(confirmDeleteMsg);
-            };
-            
-            const cancelBtn = document.createElement('button');
-            cancelBtn.innerHTML = 'Cancel';
-            cancelBtn.style.margin = '10px';
-            cancelBtn.onclick = function() {
-                document.body.removeChild(confirmDeleteMsg);
-            };
-            
-            const confirmDeleteMsg = document.createElement('div');
-            confirmDeleteMsg.style.position = 'fixed';
-            confirmDeleteMsg.style.top = '10px';
-            confirmDeleteMsg.style.left = '50%';
-            confirmDeleteMsg.style.transform = 'translateX(-50%)';
-            confirmDeleteMsg.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
-            confirmDeleteMsg.style.padding = '20px';
-            confirmDeleteMsg.style.borderRadius = '5px';
-            confirmDeleteMsg.style.boxShadow = '0 0 10px rgba(0, 0, 0, 0.3)';
-            confirmDeleteMsg.style.zIndex = '1000';
-            confirmDeleteMsg.innerHTML = `<p>Step 1 complete: Backup saved as ${backupFilename}</p>`;
-            confirmDeleteMsg.appendChild(confirmDeleteBtn);
-            confirmDeleteMsg.appendChild(cancelBtn);
-            
-            document.body.appendChild(confirmDeleteMsg);
-**/            
-        } catch (error) {
-            console.error('Error in save backup process:', error);
-            alert(`Failed to create backup for drawing "${drawingName}". See console for details.`);
-        }
+        if (!drawingName) return Promise.reject(new Error('Drawing name is required'));
+
+        return new Promise((resolve, reject) => {
+            try {
+                // First, save the drawing as drawing_deleted.json
+                console.log(`Step 1: Saving backup of drawing "${drawingName}" before unloading`);
+
+                // Create backup filename
+                const backupFilename = `${drawingName}_unloaded.json`;
+
+                // Fetch the export data first, then trigger download and deletion
+                fetch(`/api/drawings/${drawingName}/export?filename=${backupFilename}`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`Export failed: ${response.status}`);
+                        }
+                        return response.text();
+                    })
+                    .then(exportData => {
+                        // Create and trigger download with the fetched data
+                        const blob = new Blob([exportData], { type: 'application/json' });
+                        const downloadUrl = URL.createObjectURL(blob);
+                        const backupLink = document.createElement('a');
+                        backupLink.href = downloadUrl;
+                        backupLink.download = backupFilename;
+                        document.body.appendChild(backupLink);
+                        backupLink.click();
+                        document.body.removeChild(backupLink);
+                        URL.revokeObjectURL(downloadUrl);
+
+                        // Backup completed successfully
+                        console.log(`Step 1 completed: Backup saved as ${backupFilename}`);
+                        deleteDrawingFromServer(drawingName);
+
+                        // Resolve the promise after backup is complete
+                        resolve();
+                    })
+                    .catch(error => {
+                        console.error('Error creating backup before deletion:', error);
+                        alert(`Failed to create backup before unload: ${error.message}`);
+                        reject(error);
+                    });
+            } catch (error) {
+                console.error('Error in save backup process:', error);
+                alert(`Failed to create backup for drawing "${drawingName}". See console for details.`);
+                reject(error);
+            }
+        });
     }
     
     // Function to delete a drawing from the server (Step 2 of deletion)
+    // Returns a Promise that resolves when deletion is complete
     function deleteDrawingFromServer(drawingName) {
-        if (!drawingName) return;
-        
-        console.log(`Step 2: Deleting drawing "${drawingName}" from server`);
-        
-        // Delete the drawing from the server
-        fetch(`/api/drawings/${drawingName}/delete`, {
-            method: 'DELETE'
-        })
-            .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    // Remove the version and data from localStorage
-                    localStorage.removeItem(`${drawingName}_version`);
-                    localStorage.removeItem(`${drawingName}_data`);
-                    
-                    console.log(`Deleted drawing: ${drawingName}`);
-                    
-                    // Refresh the drawings list
-                    fetchDrawings();
-                    
-                    // Log successful deletion but don't show alert
-                    console.log(`Successfully deleted drawing "${drawingName}"`);
-                } else {
-                    throw new Error(result.error || 'Unknown error');
-                }
+        if (!drawingName) return Promise.reject(new Error('Drawing name is required'));
+
+        return new Promise((resolve, reject) => {
+            console.log(`Step 2: Deleting drawing "${drawingName}" from server`);
+
+            // Delete the drawing from the server
+            fetch(`/api/drawings/${drawingName}/delete`, {
+                method: 'DELETE'
             })
-            .catch(error => {
-                console.error('Error deleting drawing:', error);
-                alert(`Failed to delete drawing "${drawingName}". See console for details.`);
-            });
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        // Remove the version and data from localStorage
+                        localStorage.removeItem(`${drawingName}_version`);
+                        localStorage.removeItem(`${drawingName}_data`);
+
+                        console.log(`Deleted drawing: ${drawingName}`);
+
+                        // Log successful deletion but don't show alert
+                        console.log(`Successfully deleted drawing "${drawingName}"`);
+
+                        resolve();
+                    } else {
+                        throw new Error(result.error || 'Unknown error');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error deleting drawing:', error);
+                    reject(error);
+                });
+        });
     }
     
     // Legacy function kept for compatibility
@@ -672,7 +649,136 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!drawingName) return;
         saveDrawingAsDeletedJson(drawingName);
     }
-    
+
+    // Helper function to recursively find all inserted drawings at any level
+    function findAllInsertedDrawingsRecursive(drawingName, scannedDrawings = new Set()) {
+        // Prevent infinite recursion if there are circular references
+        if (scannedDrawings.has(drawingName)) {
+            return Promise.resolve(new Set());
+        }
+
+        scannedDrawings.add(drawingName);
+
+        return fetch(`/api/drawings/${drawingName}/data`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Failed to get drawing data: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(drawingData => {
+                let allInsertedDrawings = new Set();
+
+                if (!drawingData.items || !Array.isArray(drawingData.items)) {
+                    return allInsertedDrawings;
+                }
+
+                // Find direct insertDwg items in this drawing
+                const directInsertedDrawings = drawingData.items
+                    .filter(item => item.type && item.type.toLowerCase() === 'insertdwg' && item.drawingName)
+                    .map(item => item.drawingName);
+
+                // Add direct inserted drawings to the set
+                directInsertedDrawings.forEach(name => allInsertedDrawings.add(name));
+
+                // Recursively scan each inserted drawing for its own inserted drawings
+                const recursivePromises = directInsertedDrawings.map(insertedName =>
+                    findAllInsertedDrawingsRecursive(insertedName, scannedDrawings)
+                        .then(nestedDrawings => {
+                            nestedDrawings.forEach(name => allInsertedDrawings.add(name));
+                        })
+                        .catch(error => {
+                            console.error(`Error scanning nested drawing "${insertedName}":`, error);
+                            // Continue with other drawings even if one fails
+                        })
+                );
+
+                return Promise.all(recursivePromises).then(() => allInsertedDrawings);
+            })
+            .catch(error => {
+                console.error(`Error finding inserted drawings in "${drawingName}":`, error);
+                return new Set();
+            });
+    }
+
+    // Helper function to unload a drawing and then prompt about its inserted drawings
+    async function unloadDrawingAndCheckForInserted(drawingName) {
+        if (!drawingName) return;
+
+        console.log(`Step 1: Finding all inserted drawings in "${drawingName}" at any level`);
+
+        try {
+            // First, find all inserted drawings at any level BEFORE unloading the main drawing
+            const allInsertedDrawings = await findAllInsertedDrawingsRecursive(drawingName);
+
+            // Remove the main drawing itself from the list (we'll unload it separately)
+            allInsertedDrawings.delete(drawingName);
+
+            console.log(`Step 2: Filtering against currently loaded drawings`);
+
+            // Fetch the current list of loaded drawings from the server
+            const currentLoadedDrawings = await fetch('/api/drawings', {
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            }).then(response => response.json());
+
+            // Create a Set of currently loaded drawing names
+            const loadedDrawingNames = new Set(currentLoadedDrawings.map(d => d.name));
+
+            // Filter inserted drawings to only those that are currently loaded
+            const loadedInsertedDrawings = Array.from(allInsertedDrawings)
+                .filter(dwgName => loadedDrawingNames.has(dwgName))
+                .sort();
+
+            console.log(`Found ${allInsertedDrawings.size} referenced drawings, ${loadedInsertedDrawings.length} are currently loaded`);
+
+            console.log(`Step 3: Unloading main drawing "${drawingName}"`);
+
+            // Now unload the main drawing and wait for backup to complete
+            await saveDrawingAsDeletedJson(drawingName);
+
+            if (loadedInsertedDrawings.length > 0) {
+                console.log(`Drawing "${drawingName}" includes ${loadedInsertedDrawings.length} currently loaded inserted drawing(s):`, loadedInsertedDrawings);
+
+                // Ask user if they want to unload inserted drawings too
+                if (confirm(`The drawing "${drawingName}" has been unloaded.\n\nIt includes ${loadedInsertedDrawings.length} inserted drawing(s) that are currently loaded:\n\n${loadedInsertedDrawings.join(', ')}\n\nDo you want to unload these inserted drawings as well?`)) {
+                    console.log(`User confirmed unloading ${loadedInsertedDrawings.length} inserted drawing(s)`);
+
+                    // Unload each inserted drawing sequentially and wait for completion
+                    for (let i = 0; i < loadedInsertedDrawings.length; i++) {
+                        const insertedDrawingName = loadedInsertedDrawings[i];
+                        console.log(`Unloading inserted drawing ${i + 1}/${loadedInsertedDrawings.length}: ${insertedDrawingName}`);
+
+                        try {
+                            await saveDrawingAsDeletedJson(insertedDrawingName);
+                        } catch (error) {
+                            console.error(`Failed to unload inserted drawing "${insertedDrawingName}":`, error);
+                            // Continue with next drawing even if one fails
+                        }
+                    }
+
+                    console.log(`Completed unloading all ${loadedInsertedDrawings.length} inserted drawing(s)`);
+                    // Refresh the list after all deletions complete
+                    fetchDrawings();
+                } else {
+                    console.log(`User declined unloading inserted drawings`);
+                    // Just refresh the list since main drawing is already unloaded
+                    fetchDrawings();
+                }
+            } else {
+                console.log(`Drawing "${drawingName}" has no currently loaded inserted drawings`);
+                // No currently loaded inserted drawings, just refresh the list
+                fetchDrawings();
+            }
+        } catch (error) {
+            console.error(`Error in unload process for "${drawingName}":`, error);
+            // Just refresh since main drawing should be unloaded
+            fetchDrawings();
+        }
+    }
+
     // Function to save drawing as JSON file
     function saveDrawingAsJson(drawingName) {
         if (!drawingName) return;
