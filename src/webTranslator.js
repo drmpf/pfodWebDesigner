@@ -670,15 +670,15 @@ function translateRawValue(rawValueString,isTouchAction=false) {
     }
     
     const units = valueAndUnits[1];
-    
-    // Parse min value
-    const minValue = parseInt(backTickParts[2]);
-    
-    // Parse max and display range: max~displaymin~displaymax
-    const maxAndDisplay = backTickParts[3].split('~');
-    const maxValue = parseInt(maxAndDisplay[0]);
-    const displayMin = parseFloat(maxAndDisplay[1]);
-    const displayMax = parseFloat(maxAndDisplay[2]);
+
+    // Parse max value
+    const maxValue = parseInt(backTickParts[2]);
+
+    // Parse min and display range: min~displaymax~displaymin
+    const minAndDisplay = backTickParts[3].split('~');
+    const minValue = parseInt(minAndDisplay[0]);
+    const displayMax = parseFloat(minAndDisplay[1]);
+    const displayMin = parseFloat(minAndDisplay[2]);
     
     // Parse decimals and optional alignment: decimals~alignment
     const decimalsAndAlign = backTickParts[4].split('~');

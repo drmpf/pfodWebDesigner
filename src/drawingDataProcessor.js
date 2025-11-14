@@ -930,8 +930,10 @@ class DrawingDataProcessor {
         }
         
         // Enable updates and start update loop only after complete processing
+        // NOTE: scheduleNextUpdate() is called by applyShadowUpdates() after shadow data
+        // is copied to the redraw object, so the refresh rate will be available.
+        // This ensures refresh timers are scheduled with the correct drawing data.
         this.pfodWeb.isUpdating = true;
-        this.pfodWeb.scheduleNextUpdate();
     }
 }
 

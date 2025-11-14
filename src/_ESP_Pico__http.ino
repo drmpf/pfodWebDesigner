@@ -33,9 +33,9 @@
   If useLittleFSToServe_pfodWeb (below) is set to true then
   this code can also serve the pfodWeb files directly from the micro's file system.
   The files are in the data sub-directory of this sketch.
-  This needs <200KB of file system space on the microprocessor.      
+  This needs 1MB of file system space on the microprocessor.      
 
-  a) Configure the Tool menu Flash Size: to have FS (LittleFS file system) for ESP32 > 500Kb, for Pi PicoW/2W >500Kb, for ESP8266 >550Kb (NOTE >512kB for ESP8266)
+  a) Configure the Tool menu Flash Size: to have FS (LittleFS file system) of 1MB for ESP32, Pi PicoW/2W and ESP8266
   b) Set the ssid and password (see WiFi Settings in the code below) to match your local network's router, ssid and password
   c) Edit **useLittleFSToServe_pfodWeb** to true to start the FS file system
   c) Set a static IP to an unused IP on your network OR leave as blank and check the Serial monitor for the assigned IP
@@ -52,14 +52,13 @@
  
 */
 
-bool useLittleFSToServe_pfodWeb = false; // do no start LittleFS, need to use pfodWebServer on computer to display drawing
-// if useLittleFSToServe_pfodWeb = true; need to load all the pfodWeb files into LittleFS file system first so they can be served
+static bool useLittleFSToServe_pfodWeb = false; // do no start LittleFS, need to use pfodWeb.html on computer to display drawing
+// cacheSec only used if useLittleFSToServe_pfodWeb = true;
+static uint32_t cacheSec = 10*60;  //seconds = 10mins, if useLittleFSToServe_pfodWeb = true use this to control cache timeout
 
 // =================== WiFi settings ===================
 const char *ssid = "xxxxxx";
 const char *password = "xxxxxx";
-IPAddress staticIP;  // use auto assigned ip. NOT recommended
-//IPAddress staticIP(10, 1, 1, 100);  // use a static IP,
 
 //  NOTE:  if using PicoProbe to debug, uncomment #define PICO_PROBE to move Serial to Serial1
 //#define PICO_PROBE
@@ -69,6 +68,9 @@ IPAddress staticIP;  // use auto assigned ip. NOT recommended
 #else
 #include <WiFi.h>
 #endif
+
+IPAddress staticIP;  // use auto assigned ip. NOT recommended
+//IPAddress staticIP(10, 1, 1, 100);  // use a static IP,
 
 #include <pfodDebugPtr.h>
 #include <ESP_PicoW_pfodWebServer.h>
@@ -144,7 +146,7 @@ void setup(void) {
 
   setupWiFi();
   init_pfodMainMenu(closeConnection_pfodAppServer); // initialize dwgs and set the closeConnection fn ptr
-  start_pfodWebServer(version, useLittleFSToServe_pfodWeb);
+  start_pfodWebServer(version, useLittleFSToServe_pfodWeb, cacheSec);
   start_pfodAppServer(version);
   // <<<<<<<<< Your extra setup code goes here
 }

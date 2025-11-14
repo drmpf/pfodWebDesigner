@@ -421,6 +421,12 @@ class Redraw {
     }
 
     performRedraw() {
+        // Only redraw if in canvas mode (dwg display) - not in chart mode or raw data mode
+        if (document.body.className !== 'canvas-mode') {
+            console.log(`[REDRAW] performRedraw skipped - not in canvas-mode. Current mode: ${document.body.className}`);
+            return;
+        }
+
         // Get main drawing name and background color
         const mainDrawingName = this.redrawDrawingManager.drawings.length > 0 ? this.redrawDrawingManager.drawings[0] : '';
         const mainDrawingData = mainDrawingName ? this.redrawDrawingManager.drawingsData[mainDrawingName] : null;
@@ -613,7 +619,7 @@ class Redraw {
 
         // Get window dimensions to check if they've changed too
         const windowWidth = window.innerWidth;
-        const windowHeight = window.innerHeight;
+        const windowHeight = window.innerHeight - 40; // Subtract 40px for button bar to keep it visible
 
         console.log(`[RESIZE_DEBUG] Current dimensions: logical=${logicalWidth}x${logicalHeight}, window=${windowWidth}x${windowHeight}`);
         console.log(`[RESIZE_DEBUG] Previous dimensions: logical=${this.lastLogicalWidth}x${this.lastLogicalHeight}, window=${this.lastWindowWidth}x${this.lastWindowHeight}`);

@@ -17,7 +17,7 @@ class MessageCollector {
     this.maxMessages = maxMessages;
     this.subscribers = []; // Callback functions to notify of new messages
     this.isPaused = false;
-    console.log('[MESSAGE_COLLECTOR] Created with max messages:', maxMessages);
+    // console.log('[MESSAGE_COLLECTOR Created with max messages:', maxMessages);
   }
 
   /**
@@ -52,7 +52,7 @@ class MessageCollector {
     this.notifySubscribers(entry);
 
     const logPrefix = direction === 'sent' ? '>>> SENT' : '<<< RECEIVED';
-    console.log(`[MESSAGE_COLLECTOR] ${logPrefix} [${protocol}] ${message ? message.substring(0, 100) : '(empty)'}`);
+    // console.log('[MESSAGE_COLLECTOR ${logPrefix} [${protocol}] ${message ? message.substring(0, 100) : '(empty)'}`);
   }
 
   /**
@@ -79,7 +79,7 @@ class MessageCollector {
       try {
         callback(entry);
       } catch (error) {
-        console.error('[MESSAGE_COLLECTOR] Error in subscriber callback:', error);
+        // console.error('[MESSAGE_COLLECTOR Error in subscriber callback:', error);
       }
     });
   }
@@ -110,7 +110,7 @@ class MessageCollector {
    */
   clear() {
     this.messages = [];
-    console.log('[MESSAGE_COLLECTOR] Messages cleared');
+    // console.log('[MESSAGE_COLLECTOR Messages cleared');
   }
 
   /**
@@ -118,7 +118,7 @@ class MessageCollector {
    */
   pause() {
     this.isPaused = true;
-    console.log('[MESSAGE_COLLECTOR] Paused');
+    // console.log('[MESSAGE_COLLECTOR Paused');
   }
 
   /**
@@ -126,7 +126,7 @@ class MessageCollector {
    */
   resume() {
     this.isPaused = false;
-    console.log('[MESSAGE_COLLECTOR] Resumed');
+    // console.log('[MESSAGE_COLLECTOR Resumed');
   }
 
   /**
@@ -165,6 +165,12 @@ class RawMessageViewer {
     this.filterDirection = 'all'; // 'all', 'sent', 'received'
     this.autoScroll = true;
     this.messageViews = []; // Store references to message view elements for scrolling
+
+    // Message batching for performance with high-speed data
+    this.pendingMessages = []; // Queue of messages to add
+    this.updateScheduled = false; // Flag to track if an update is already scheduled
+    this.maxBatchSize = 50; // Process up to 50 messages per animation frame
+    this.animationFrameId = null;
 
     console.log('[RAW_MESSAGE_VIEWER] Created with container:', containerId);
 
@@ -215,6 +221,7 @@ class RawMessageViewer {
               <button id="raw-msg-clear-btn" class="raw-message-btn">Clear</button>
               <button id="raw-msg-export-json-btn" class="raw-message-btn">Export JSON</button>
               <button id="raw-msg-export-csv-btn" class="raw-message-btn">Export CSV</button>
+              <button id="raw-msg-export-csv-by-fields-btn" class="raw-message-btn" title="Export CSV data organized by field count">Export CSV by Fields</button>
             </div>
           </div>
         </div>
@@ -451,14 +458,20 @@ class RawMessageViewer {
     });
     document.getElementById('raw-msg-clear-btn')?.addEventListener('click', () => {
       this.collector.clear();
+      // Also clear CSV collector if available
+      if (ConnectionManager.csvCollector) {
+        ConnectionManager.csvCollector.clear();
+      }
       this.updateMessageDisplay();
     });
     document.getElementById('raw-msg-export-json-btn')?.addEventListener('click', () => this.exportJSON());
     document.getElementById('raw-msg-export-csv-btn')?.addEventListener('click', () => this.exportCSV());
+    document.getElementById('raw-msg-export-csv-by-fields-btn')?.addEventListener('click', () => this.exportCSVByFieldCount());
   }
 
   /**
    * Called when a new message is added to the collector
+   * Messages are queued and processed in batches to prevent DOM thrashing
    */
   onNewMessage(entry) {
     if (!this.isVisible) {
@@ -469,13 +482,73 @@ class RawMessageViewer {
       return;
     }
 
-    this.addMessageToDisplay(entry);
+    // Queue the message instead of adding it immediately
+    this.pendingMessages.push(entry);
 
+    // Schedule a batch update if one isn't already scheduled
+    if (!this.updateScheduled) {
+      this.updateScheduled = true;
+      this.animationFrameId = requestAnimationFrame(() => {
+        this.processPendingMessages();
+      });
+    }
+  }
+
+  /**
+   * Process queued messages in batches using requestAnimationFrame
+   * This prevents DOM thrashing when receiving high-speed data
+   */
+  processPendingMessages() {
+    if (this.pendingMessages.length === 0) {
+      this.updateScheduled = false;
+      return;
+    }
+
+    const messageList = document.getElementById('raw-message-list');
+    if (!messageList) {
+      this.pendingMessages = [];
+      this.updateScheduled = false;
+      return;
+    }
+
+    // Process up to maxBatchSize messages
+    const batch = this.pendingMessages.splice(0, this.maxBatchSize);
+
+    // Remove empty message if it exists
+    const emptyMsg = messageList.querySelector('.raw-message-empty');
+    if (emptyMsg && this.messageViews.length === 0) {
+      emptyMsg.remove();
+    }
+
+    // Use document fragment for better performance
+    const fragment = document.createDocumentFragment();
+    batch.forEach(entry => {
+      const messageEl = this.createMessageElement(entry);
+      fragment.appendChild(messageEl);
+      this.messageViews.push(messageEl);
+    });
+
+    messageList.appendChild(fragment);
+
+    // Limit number of visible elements to prevent memory issues
+    const maxVisibleMessages = 1000;
+    while (this.messageViews.length > maxVisibleMessages) {
+      const removed = this.messageViews.shift();
+      removed.remove();
+    }
+
+    // Scroll to bottom if autoScroll is enabled
     if (this.autoScroll) {
-      const messageList = document.getElementById('raw-message-list');
-      if (messageList) {
-        messageList.scrollTop = messageList.scrollHeight;
-      }
+      messageList.scrollTop = messageList.scrollHeight;
+    }
+
+    // Schedule next batch if there are more messages
+    if (this.pendingMessages.length > 0) {
+      this.animationFrameId = requestAnimationFrame(() => {
+        this.processPendingMessages();
+      });
+    } else {
+      this.updateScheduled = false;
     }
   }
 
@@ -490,18 +563,9 @@ class RawMessageViewer {
   }
 
   /**
-   * Add a message to the display
+   * Create a message element from an entry
    */
-  addMessageToDisplay(entry) {
-    const messageList = document.getElementById('raw-message-list');
-    if (!messageList) return;
-
-    // Remove empty message if it exists
-    const emptyMsg = messageList.querySelector('.raw-message-empty');
-    if (emptyMsg) {
-      emptyMsg.remove();
-    }
-
+  createMessageElement(entry) {
     const messageEl = document.createElement('div');
     messageEl.className = `raw-message-item ${entry.direction}`;
 
@@ -528,6 +592,23 @@ class RawMessageViewer {
     messageEl.appendChild(directionEl);
     messageEl.appendChild(textEl);
 
+    return messageEl;
+  }
+
+  /**
+   * Add a message to the display (used by updateMessageDisplay during filtering)
+   */
+  addMessageToDisplay(entry) {
+    const messageList = document.getElementById('raw-message-list');
+    if (!messageList) return;
+
+    // Remove empty message if it exists
+    const emptyMsg = messageList.querySelector('.raw-message-empty');
+    if (emptyMsg) {
+      emptyMsg.remove();
+    }
+
+    const messageEl = this.createMessageElement(entry);
     messageList.appendChild(messageEl);
     this.messageViews.push(messageEl);
 
@@ -602,6 +683,14 @@ class RawMessageViewer {
       container.style.flex = 0; // Take no space
       this.isVisible = false;
 
+      // Cancel any pending animation frame and clear pending messages
+      if (this.animationFrameId) {
+        cancelAnimationFrame(this.animationFrameId);
+        this.animationFrameId = null;
+      }
+      this.pendingMessages = [];
+      this.updateScheduled = false;
+
       // Hide the divider
       const divider = document.getElementById('resize-divider');
       if (divider) {
@@ -657,6 +746,46 @@ class RawMessageViewer {
     link.click();
     URL.revokeObjectURL(url);
     console.log('[RAW_MESSAGE_VIEWER] Exported as CSV');
+  }
+
+  /**
+   * Export CSV data by field count (from CSVCollector)
+   * Creates separate files for each field count format
+   */
+  exportCSVByFieldCount() {
+    const csvCollector = ConnectionManager.csvCollector;
+    if (!csvCollector) {
+      console.warn('[RAW_MESSAGE_VIEWER] CSV collector not available');
+      return;
+    }
+
+    const fieldCounts = csvCollector.getFieldCounts();
+    if (fieldCounts.length === 0) {
+      console.warn('[RAW_MESSAGE_VIEWER] No CSV data collected');
+      pfodAlert('No CSV data has been collected yet.\n\nCSV data appears after closing braces } or line breaks in the device communication.');
+      return;
+    }
+
+    // Export each field count as separate file
+    const timestamp = new Date().toISOString().replace(/:/g, '-');
+    let exportedCount = 0;
+
+    for (const fieldCount of fieldCounts) {
+      const csvText = csvCollector.exportAsText(fieldCount);
+      if (csvText.length > 0) {
+        const blob = new Blob([csvText], { type: 'text/csv; charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `pfod-csv-${fieldCount}fields-${timestamp}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+        exportedCount++;
+        console.log(`[RAW_MESSAGE_VIEWER] Exported CSV file for ${fieldCount} fields (${csvCollector.getLineCount(fieldCount)} lines)`);
+      }
+    }
+
+    console.log(`[RAW_MESSAGE_VIEWER] Exported ${exportedCount} CSV files`);
   }
 }
 

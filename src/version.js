@@ -1,5 +1,8 @@
 // Shared constants to avoid circular dependencies
-  var JS_VERSION = "V2.0.4 -- 24nd October 2025";
+  var JS_VERSION = "V3.0.2 -- 15th Novemeber 2025";
+// V3.0.2 disable refresh in chart mode fixed value scaling
+// V3.0.1 auto chart option on startup
+// V3.0.0 added initial charting support
 // V2.0.4 fixed scaling for nested dwgs
 // V2.0.3 fixed transform for nested dwgs
 // V2.0.2 fixed transform pushZero for nested dwgs

@@ -164,10 +164,10 @@ window.pfodWebMouse = {
 
   handleMouseMove: function(e) {
     if (!this.touchState.isDown) {
-      console.log(`[MOUSE_MOVE] Ignoring - mouse not down`);
+      // console.log(`[MOUSE_MOVE] Ignoring - mouse not down`);
       return;
     }
-    console.log(`[MOUSE_MOVE] Processing mouse move event`);
+    // console.log(`[MOUSE_MOVE] Processing mouse move event`);
 
     // Get canvas-relative coordinates and scale factors
     const scale = window.pfodWebMouse.getCanvasScale.call(this);

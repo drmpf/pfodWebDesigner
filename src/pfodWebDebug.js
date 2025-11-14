@@ -126,6 +126,21 @@ class DrawingViewer {
     // Current identifier for touchZone requests - defaults to 'pfodWeb'
     this.currentIdentifier = 'pfodWeb';
 
+    // Command stack for back navigation - stores previous commands that opened displays
+    this.commandStack = []; // Stack of commands that opened new displays
+    this.currentRefreshCmd = null; // Command to resend when reload button is clicked
+    this.currentRefreshCmdType = null; // Type of the current refresh command (main, mainMenu, etc)
+    this.currentlyDisplayingDwg = false; // Set to true when {+ received, false when non-dwgUpdate received
+    this.rawDataScrollLocked = false; // Track if raw data scroll is locked
+    this.rawDataPollingInterval = null; // Interval handle for raw data polling
+    this.initialRequestQueued = false; // Track if initial request has been queued
+
+    // Chart display state
+    this.currentChart = null; // Current chart instance
+    this.currentChartLabels = null; // Current chart field labels
+    this.currentChartFieldCount = null; // Number of fields in current chart
+    this.currentChartLimit = null; // Data point limit for current chart
+
     // Queue for holding responses while mouse is down (to prevent flashing)
     this.pendingResponseQueue = [];
 
@@ -154,6 +169,10 @@ class DrawingViewer {
 
     // Set up event listeners using pfodWebMouse.js
     this.setupEventListeners();
+
+    // Set initial CSS mode to canvas display
+    document.body.className = 'canvas-mode';
+    console.log('[DRAWING_VIEWER] Canvas mode CSS enabled');
   }
 
   /**
@@ -175,21 +194,58 @@ class DrawingViewer {
         console.log('[PFODWEB_DEBUG] Message collector created and set on ConnectionManager');
       }
 
+      // Create CSV collector if not already created
+      if (!window.csvCollector) {
+        window.csvCollector = new CSVCollector();
+        ConnectionManager.setCSVCollector(window.csvCollector);
+        console.log('[PFODWEB_DEBUG] CSV collector created and set on ConnectionManager');
+      }
+
+      // Create raw data collector if not already created
+      console.log('[PFODWEB_DEBUG] Checking rawDataCollector - exists?', !!window.rawDataCollector, 'RawDataCollector class exists?', typeof RawDataCollector);
+      if (!window.rawDataCollector) {
+        try {
+          console.log('[PFODWEB_DEBUG] Creating RawDataCollector instance...');
+          window.rawDataCollector = new RawDataCollector();
+          console.log('[PFODWEB_DEBUG] RawDataCollector instance created successfully');
+          ConnectionManager.setRawDataCollector(window.rawDataCollector);
+          console.log('[PFODWEB_DEBUG] Raw data collector created and set on ConnectionManager');
+        } catch (e) {
+          console.error('[PFODWEB_DEBUG] Error creating RawDataCollector:', e);
+        }
+      } else {
+        console.log('[PFODWEB_DEBUG] RawDataCollector already exists, not creating new instance');
+      }
+
+      // Create chart display if not already created
+      if (!window.chartDisplay) {
+        try {
+          console.log('[PFODWEB_DEBUG] Creating ChartDisplay instance...');
+          window.chartDisplay = new ChartDisplay();
+          console.log('[PFODWEB_DEBUG] ChartDisplay instance created successfully');
+        } catch (e) {
+          console.error('[PFODWEB_DEBUG] Error creating ChartDisplay:', e);
+        }
+      } else {
+        console.log('[PFODWEB_DEBUG] ChartDisplay already exists, not creating new instance');
+      }
+
       // Create raw message viewer
       window.rawMessageViewer = new RawMessageViewer(window.messageCollector, 'raw-message-viewer');
       window.rawMessageViewer.initialize();
       console.log('[PFODWEB_DEBUG] Raw message viewer initialized');
 
-      // Add a keyboard shortcut to toggle the viewer (Ctrl+Shift+M)
-      document.addEventListener('keydown', (event) => {
-        if (event.ctrlKey && event.shiftKey && event.key === 'M') {
-          event.preventDefault();
-          if (window.rawMessageViewer) {
-            window.rawMessageViewer.toggle();
-          }
-        }
-      });
-      console.log('[PFODWEB_DEBUG] Keyboard shortcut Ctrl+Shift+M added to toggle message viewer');
+      // Keyboard shortcut disabled - now only accessible via toolbar menu
+      // // Add a keyboard shortcut to toggle the viewer (Ctrl+Shift+M)
+      // document.addEventListener('keydown', (event) => {
+      //   if (event.ctrlKey && event.shiftKey && event.key === 'M') {
+      //     event.preventDefault();
+      //     if (window.rawMessageViewer) {
+      //       window.rawMessageViewer.toggle();
+      //     }
+      //   }
+      // });
+      console.log('[PFODWEB_DEBUG] Keyboard shortcut Ctrl+Shift+M disabled - access via toolbar menu');
     } catch (error) {
       console.error('[PFODWEB_DEBUG] Error initializing message viewer:', error);
     }
@@ -372,11 +428,30 @@ class DrawingViewer {
 
   // Handle resize with dimension change detection and saving
   handleResize() {
+    console.log('[RESIZE] handleResize() called, className:', document.body.className, 'chartDisplay exists:', !!window.chartDisplay);
+
+    // Check if in chart mode - use different resize handling
+    if (document.body.className === 'chart-mode' && window.chartDisplay) {
+      console.log('[RESIZE] In chart mode - delegating to ChartDisplay.handleResize()');
+      window.chartDisplay.handleResize(this.canvas);
+      return;
+    }
+
+    console.log('[RESIZE] Not in chart mode - using drawing resize logic');
+
+    // Skip resize if raw data is displayed (canvas is hidden)
+    if (this.canvas.style.display === 'none') {
+      console.log('[RESIZE] Canvas is hidden (raw data display) - skipping resize');
+      return;
+    }
+
     // Get current drawing data to determine logical dimensions
     const logicalDrawingData = this.redraw.redrawDrawingManager.getCurrentDrawingData();
     if (!logicalDrawingData) {
       console.warn('No drawing data available for resize handling');
-      this.redraw.resizeCanvas(this.touchState);
+      if (document.body.className === 'canvas-mode') {
+        this.redraw.resizeCanvas(this.touchState);
+      }
       return;
     }
 
@@ -384,7 +459,7 @@ class DrawingViewer {
     const logicalWidth = Math.min(Math.max(logicalDrawingData.x, 1), 255);
     const logicalHeight = Math.min(Math.max(logicalDrawingData.y, 1), 255);
     const windowWidth = window.innerWidth;
-    const windowHeight = window.innerHeight;
+    const windowHeight = window.innerHeight - 40; // Subtract 40px for button bar to keep it visible
 
     // Check if dimensions have changed
     const dimensionsChanged = (
@@ -407,9 +482,14 @@ class DrawingViewer {
       this.saveDimensions(logicalWidth, logicalHeight, windowWidth, windowHeight);
     }
 
-    // Call redraw to handle the actual resizing and redraw elements
-    this.redraw.resizeCanvas(this.touchState);
-    this.redraw.performRedraw();
+    // Call redraw to handle the actual resizing and redraw elements (only in canvas-mode)
+    if (document.body.className === 'canvas-mode') {
+      console.log('[RESIZE] Calling resizeCanvas and performRedraw in canvas-mode');
+      this.redraw.resizeCanvas(this.touchState);
+      this.redraw.performRedraw();
+    } else {
+      console.log('[RESIZE] Not in canvas-mode - skipping resizeCanvas/performRedraw. Current mode:', document.body.className);
+    }
   }
 
   // Save current dimensions to localStorage for future reloads
@@ -438,8 +518,260 @@ class DrawingViewer {
       console.error('pfodWebMouse.js not loaded - mouse events will not work');
     }
 
-    // Setup context menu for right-click access to message viewer
-    this.setupContextMenu();
+    // Setup toolbar button listeners
+    this.setupToolbarButtons();
+
+    // Context menu disabled - raw data now only accessible via toolbar menu
+    // this.setupContextMenu();
+  }
+
+  /**
+   * Update refresh button state based on current display mode
+   * Disable if NOT in canvas-mode (i.e., in chart-mode or rawdata-mode)
+   * Enable if in canvas-mode
+   */
+  updateRefreshButtonState() {
+    const btnReload = document.getElementById('btn-reload');
+    if (!btnReload) return;
+
+    const isCanvasMode = document.body.className === 'canvas-mode';
+    btnReload.disabled = !isCanvasMode;
+    console.log('[TOOLBAR] Refresh button state updated: disabled=', btnReload.disabled, 'mode=', document.body.className);
+  }
+
+  /**
+   * Setup toolbar button listeners
+   */
+  setupToolbarButtons() {
+    // Skip toolbar setup if designer parameter is present
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('designer')) {
+      console.log('[TOOLBAR] Designer mode detected - skipping toolbar button setup');
+      return;
+    }
+
+    // Left arrow button - pop previous command from stack or request main menu if stack is empty
+    const btnLeftArrow = document.getElementById('btn-left-arrow');
+    if (btnLeftArrow) {
+      btnLeftArrow.addEventListener('click', () => {
+        const backClickTime = Date.now();
+        console.log('[TOOLBAR] Left arrow clicked at', backClickTime, 'className=', document.body.className);
+
+        // If in chart mode, stop polling immediately (regardless of back target)
+        if (document.body.className === 'chart-mode') {
+          console.log('[TOOLBAR] In chart mode - stopping chart polling immediately at', Date.now());
+          this.exitChartDisplay();
+          console.log('[TOOLBAR] exitChartDisplay completed at', Date.now(), 'className now=', document.body.className);
+        } else {
+          console.log('[TOOLBAR] Not in chart mode, className=', document.body.className);
+        }
+
+        let cmdToSend;
+        if (this.commandStack.length > 0) {
+          cmdToSend = this.commandStack.pop();
+          console.log('[TOOLBAR] Popped command from stack:', cmdToSend);
+        } else {
+          cmdToSend = '{.}';
+          console.log('[TOOLBAR] Command stack is empty - using main menu command');
+        }
+        this.currentRefreshCmd = cmdToSend;
+        this.currentRefreshCmdType = 'back';  // Back navigation command
+        this.clearPendingQueue();
+        this.addToRequestQueue(null, cmdToSend, null, null, 'back');
+        console.log('[TOOLBAR] Back navigation request queued');
+      });
+    }
+
+    // Middle button (reload) - resend last command
+    const btnReload = document.getElementById('btn-reload');
+    if (btnReload) {
+      btnReload.addEventListener('click', () => {
+        console.log('[TOOLBAR] Reload button clicked - resending current refresh command');
+        console.log('[TOOLBAR] currentRefreshCmd value:', this.currentRefreshCmd);
+        console.log('[TOOLBAR] currentRefreshCmd type:', typeof this.currentRefreshCmd);
+        console.log('[TOOLBAR] currentRefreshCmd is null:', this.currentRefreshCmd === null);
+        this.clearPendingQueue();
+        // If currentRefreshCmd is null, send {.} instead of null
+        const cmdToSend = this.currentRefreshCmd !== null ? this.currentRefreshCmd : '{.}';
+        console.log('[TOOLBAR] Sending refresh command:', cmdToSend);
+        this.addToRequestQueue(null, cmdToSend, null, null, 'refresh');
+      });
+    }
+
+    // Right button (three dots) - show toolbar menu
+    const btnMenu = document.getElementById('btn-menu');
+    if (btnMenu) {
+      btnMenu.addEventListener('click', (event) => {
+        console.log('[TOOLBAR] Menu button clicked');
+        this.showToolbarMenu(event);
+      });
+    }
+
+    console.log('[TOOLBAR] Toolbar button listeners setup complete');
+  }
+
+  /**
+   * Show toolbar menu with options
+   */
+  showToolbarMenu(event) {
+    const menuTime = Date.now();
+    console.log('[TOOLBAR_MENU] showToolbarMenu called at', menuTime, 'className=', document.body.className);
+
+    const btnMenu = document.getElementById('btn-menu');
+    if (!btnMenu) {
+      console.error('[TOOLBAR_MENU] Menu button not found');
+      return;
+    }
+
+    // Remove any existing menu
+    const existing = document.getElementById('toolbar-menu');
+    if (existing) {
+      existing.remove();
+    }
+
+    // Create menu
+    const menu = document.createElement('div');
+    menu.id = 'toolbar-menu';
+    menu.style.cssText = `
+      position: fixed;
+      background-color: white;
+      border: 2px solid #333;
+      border-radius: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      z-index: 999999;
+      min-width: 160px;
+      padding: 4px 0;
+      visibility: hidden;
+    `;
+
+    // Add menu item for raw data
+    const item = document.createElement('div');
+    item.style.cssText = `
+      padding: 10px 16px;
+      cursor: pointer;
+      user-select: none;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      color: #000;
+      white-space: nowrap;
+    `;
+    item.textContent = 'Show Raw Data';
+    item.addEventListener('click', () => {
+      console.log('[TOOLBAR_MENU] Show Raw Data clicked');
+      if (window.rawMessageViewer) {
+        window.rawMessageViewer.show();
+        console.log('[TOOLBAR_MENU] Opened raw data viewer');
+      }
+      menu.remove();
+    });
+    item.addEventListener('mouseover', () => {
+      item.style.backgroundColor = '#e8e8e8';
+    });
+    item.addEventListener('mouseout', () => {
+      item.style.backgroundColor = 'transparent';
+    });
+
+    menu.appendChild(item);
+
+    // Add menu item for chart display
+    const chartItem = document.createElement('div');
+    chartItem.style.cssText = `
+      padding: 10px 16px;
+      cursor: pointer;
+      user-select: none;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      color: #000;
+      white-space: nowrap;
+    `;
+    chartItem.textContent = 'Chart';
+    chartItem.addEventListener('click', () => {
+      const clickTime = Date.now();
+      console.log('[TOOLBAR_MENU] Chart clicked at', clickTime);
+      console.log('[TOOLBAR_MENU] className=', document.body.className);
+      console.log('[TOOLBAR_MENU] drawingViewer=', drawingViewer ? 'exists' : 'undefined');
+
+      // If already in chart mode, do nothing
+      if (document.body.className === 'chart-mode') {
+        console.log('[TOOLBAR_MENU] Already in chart mode - ignoring Chart menu click');
+        menu.remove();
+        return;
+      }
+
+      // Ensure chartDisplay is initialized (in case Chart clicked before initialization completes)
+      console.log('[TOOLBAR_MENU] Checking chartDisplay at', Date.now(), 'chartDisplay:', window.chartDisplay ? 'exists' : 'undefined');
+      if (!window.chartDisplay) {
+        console.log('[TOOLBAR_MENU] chartDisplay not initialized, creating now...');
+        try {
+          window.chartDisplay = new ChartDisplay();
+          console.log('[TOOLBAR_MENU] chartDisplay created successfully');
+        } catch (e) {
+          console.error('[TOOLBAR_MENU] Failed to create chartDisplay:', e);
+          menu.remove();
+          return;
+        }
+      }
+
+      // Clear queued commands
+      console.log('[TOOLBAR_MENU] Starting to clear queued commands at', Date.now(), 'elapsed:', Date.now() - clickTime, 'ms');
+      drawingViewer.clearPendingQueue();
+      console.log('[TOOLBAR_MENU] Finished clearing queued commands at', Date.now(), 'elapsed:', Date.now() - clickTime, 'ms');
+
+      // Open chart display
+      console.log('[TOOLBAR_MENU] Starting displayChart at', Date.now(), 'elapsed:', Date.now() - clickTime, 'ms');
+      drawingViewer.displayChart("Chart", "", 500);
+      console.log('[TOOLBAR_MENU] Finished displayChart at', Date.now(), 'elapsed:', Date.now() - clickTime, 'ms');
+      console.log('[TOOLBAR_MENU] After displayChart, className=', document.body.className);
+
+      menu.remove();
+      console.log('[TOOLBAR_MENU] Menu removed at', Date.now(), 'total elapsed:', Date.now() - clickTime, 'ms');
+    });
+    chartItem.addEventListener('mouseover', () => {
+      chartItem.style.backgroundColor = '#e8e8e8';
+    });
+    chartItem.addEventListener('mouseout', () => {
+      chartItem.style.backgroundColor = 'transparent';
+    });
+
+    menu.appendChild(chartItem);
+    document.body.appendChild(menu);
+
+    // Get button position AFTER menu is in DOM
+    const rect = btnMenu.getBoundingClientRect();
+    console.log('[TOOLBAR_MENU] Button rect:', { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width });
+
+    // Get menu dimensions
+    const menuHeight = menu.offsetHeight;
+    const menuWidth = menu.offsetWidth;
+    console.log('[TOOLBAR_MENU] Menu dimensions:', { width: menuWidth, height: menuHeight });
+
+    // Position menu ABOVE button
+    // - Right edge of menu aligned with right edge of button
+    // - Bottom of menu just above button top
+    const menuLeft = rect.right - menuWidth;
+    const menuTop = rect.top - menuHeight - 2;
+
+    menu.style.left = Math.max(0, menuLeft) + 'px';  // Don't go off-screen left
+    menu.style.top = Math.max(0, menuTop) + 'px';    // Don't go off-screen top
+    menu.style.visibility = 'visible';
+
+    console.log('[TOOLBAR_MENU] Menu positioned at left=' + Math.max(0, menuLeft) + 'px, top=' + Math.max(0, menuTop) + 'px');
+    console.log('[TOOLBAR_MENU] Menu z-index: 999999');
+
+    // Close menu on outside click
+    const closeMenu = (e) => {
+      if (!e.target.closest('#toolbar-menu') && e.target !== btnMenu) {
+        console.log('[TOOLBAR_MENU] Closing menu (outside click)');
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+      }
+    };
+
+    // Use slight delay to ensure event listeners are ready
+    setTimeout(() => {
+      document.addEventListener('click', closeMenu);
+      console.log('[TOOLBAR_MENU] Close listener attached');
+    }, 50);
   }
 
   /**
@@ -513,11 +845,11 @@ class DrawingViewer {
     document.head.appendChild(style);
     document.body.appendChild(contextMenu);
 
-    // Handle right-click on canvas
-    canvas.addEventListener('contextmenu', (event) => {
-      event.preventDefault();
-      this.showContextMenu(event.clientX, event.clientY, contextMenu);
-    });
+    // Right-click context menu disabled - now only accessible via toolbar menu
+    // canvas.addEventListener('contextmenu', (event) => {
+    //   event.preventDefault();
+    //   this.showContextMenu(event.clientX, event.clientY, contextMenu);
+    // });
 
     // Close menu on document click
     document.addEventListener('click', (event) => {
@@ -595,7 +927,9 @@ class DrawingViewer {
 
     // Add to request queue with mainMenu type - not a drawing request
     const requestType = 'mainMenu';
-    this.addToRequestQueue(null, startupCmd, null, null, requestType);
+    // Mark this as the initial request for special timeout handling
+    this.initialRequestQueued = true;
+    this.addToRequestQueue(null, startupCmd, null, null, requestType, true);
   }
 
   // Update page title to include main drawing name
@@ -654,7 +988,6 @@ class DrawingViewer {
     if (this.updateTimer) {
       clearTimeout(this.updateTimer);
       this.updateTimer = null;
-      console.log('Cleared existing update timer');
     }
 
     // Get the current main drawing data from redraw system (where data is actually stored after processing)
@@ -666,8 +999,9 @@ class DrawingViewer {
     // Only schedule an update if refresh is greater than 0, mouse is not down, queue is empty, and no request in flight
     // This ensures that a refresh value of 0 properly disables automatic updates
     // and prevents updates during mouse interactions or ongoing queue processing
+    // Also check that a drawing is currently being displayed (not raw data or menu)
     if (this.isUpdating && currentDrawingData && currentDrawingData.refresh > 0 && !this.touchState.isDown &&
-        this.requestQueue.length === 0 && !this.sentRequest && !hasOpenDialog) {
+        this.requestQueue.length === 0 && !this.sentRequest && !hasOpenDialog && this.currentlyDisplayingDwg) {
       console.log(`[REFRESH] Scheduling next update in ${currentDrawingData.refresh}ms for drawing "${this.redraw.getCurrentDrawingName()}"`);
       this.updateTimer = setTimeout(() => this.fetchRefresh(), currentDrawingData.refresh);
       // Also schedule updates for inserted drawings
@@ -688,6 +1022,8 @@ class DrawingViewer {
       console.log(`[REFRESH] Skipping update scheduling - request in flight for "${this.sentRequest.drawingName}"`);
     } else if (hasOpenDialog) {
       console.log('[REFRESH] Skipping update scheduling - touchActionInput dialog is open');
+    } else if (!this.currentlyDisplayingDwg) {
+      console.log('[REFRESH] Not currently displaying dwg - skipping timer reschedule');
     }
 
   }
@@ -755,6 +1091,12 @@ class DrawingViewer {
       // For now, using drawings[0] as current drawing but this needs architectural change
       const currentDrawingName = this.redraw.redrawDrawingManager.drawings.length > 0 ? this.redraw.redrawDrawingManager.drawings[0] : '';
       console.log(`[UPDATE] Current drawing: "${currentDrawingName}", inserted drawings: ${this.redraw.redrawDrawingManager.drawings.length - 1}`);
+      console.log(`[UPDATE] All drawings array: [${this.redraw.redrawDrawingManager.drawings.join(', ')}]`);
+
+      // Debug: log if any drawing name is null
+      if (currentDrawingName === null || currentDrawingName === undefined) {
+        console.warn(`[UPDATE] WARNING: currentDrawingName is ${currentDrawingName}, drawings array:`, this.redraw.redrawDrawingManager.drawings);
+      }
 
       // Update collection removed - using unified shadow processing system
 
@@ -790,11 +1132,12 @@ class DrawingViewer {
   }
 
   // Add a request to the queue
-  addToRequestQueue(drawingName, cmd, options, touchZoneInfo, requestType = 'unknown') {
-    console.warn(`[QUEUE] Adding request for "${drawingName}" to queue (type: ${requestType})`);
+  addToRequestQueue(drawingName, cmd, options, touchZoneInfo, requestType = 'unknown', isInitial = false) {
+    console.warn(`[QUEUE] Adding request for "${drawingName}" to queue (type: ${requestType}, isInitial: ${isInitial})`);
     console.log(`[QUEUE] Command "${cmd}"`);
     console.log(`[QUEUE] Current shadow processing type: ${this.shadowProcessing.requestType}`);
     console.log(`[QUEUE] Queue length before add: ${this.requestQueue.length}, sentRequest: ${this.sentRequest ? this.sentRequest.drawingName + '(' + this.sentRequest.requestType + ')' : 'null'}`);
+
     if (requestType == 'unknown') {
       console.error(`[QUEUE] Error: Unknown requestType`);
       return;
@@ -849,7 +1192,8 @@ class DrawingViewer {
       drawingName: drawingName,
       cmd: cmd,
       touchZoneInfo: touchZoneInfo,
-      requestType: requestType
+      requestType: requestType,
+      isInitial: isInitial
     });
     console.warn(`[QUEUE] addToRequestQueue current queue is:`, JSON.stringify(this.requestQueue, null, 2));
     // Process the queue if not already processing
@@ -1001,8 +1345,663 @@ class DrawingViewer {
           // This method only handles normal redraws
           this.handleResize();
    }
-    
-   
+
+  /**
+   * Display raw data text in place of canvas
+   * Creates a scrolling text display for {=} response data
+   * Keeps button panel visible at bottom
+   * Continuously appends incoming data and auto-scrolls (unless scroll is locked)
+   */
+  displayRawDataText(chartTitle, rawData) {
+    // console.log('[RAW_DATA] displayRawDataText called - title:', chartTitle, 'data length:', rawData.length);
+
+    // Switch to raw data display CSS mode
+    document.body.className = 'rawdata-mode';
+    // console.log('[RAW_DATA] Switched to rawdata-mode CSS');
+
+    // Update refresh button state (disable when not in canvas-mode)
+    this.updateRefreshButtonState();
+
+    // Get canvas wrapper (contains just the canvas)
+    const canvasWrapper = document.getElementById('canvas-wrapper');
+    if (!canvasWrapper) {
+      console.error('[RAW_DATA] Canvas wrapper not found');
+      return;
+    }
+
+    // Create or get raw data display element
+    let rawDataDisplay = document.getElementById('raw-data-text-display');
+    if (!rawDataDisplay) {
+      // console.log('[RAW_DATA] Creating new raw data display');
+      rawDataDisplay = document.createElement('div');
+      rawDataDisplay.id = 'raw-data-text-display';
+      rawDataDisplay.style.cssText = `
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        background-color: white;
+        overflow: hidden;
+        box-sizing: border-box;
+      `;
+
+      // Create title bar with lock scroll button
+      const titleBar = document.createElement('div');
+      titleBar.id = 'raw-data-title-bar';
+      titleBar.style.cssText = `
+        background-color: #333;
+        color: white;
+        padding: 8px 10px;
+        font-weight: bold;
+        flex-shrink: 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        height: 32px;
+        box-sizing: border-box;
+      `;
+
+      const titleText = document.createElement('span');
+      titleText.textContent = chartTitle || 'Raw Data';
+
+      const lockButton = document.createElement('button');
+      lockButton.id = 'raw-data-lock-scroll-btn';
+      lockButton.textContent = '🔓 Scroll';
+      lockButton.style.cssText = `
+        background-color: #555;
+        color: white;
+        border: 1px solid #777;
+        padding: 4px 8px;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 12px;
+      `;
+
+      let scrollLocked = false;
+      lockButton.addEventListener('click', () => {
+        scrollLocked = !scrollLocked;
+        lockButton.textContent = scrollLocked ? '🔒 Locked' : '🔓 Scroll';
+        lockButton.style.backgroundColor = scrollLocked ? '#a00' : '#555';
+        this.rawDataScrollLocked = scrollLocked;
+      });
+
+      const saveButton = document.createElement('button');
+      saveButton.id = 'raw-data-save-btn';
+      saveButton.textContent = '💾 Save';
+      saveButton.style.cssText = `
+        background-color: #0066cc;
+        color: white;
+        border: 1px solid #0044aa;
+        padding: 4px 8px;
+        margin-left: 8px;
+        border-radius: 3px;
+        cursor: pointer;
+        font-size: 12px;
+      `;
+
+      saveButton.addEventListener('click', () => {
+        // Get all raw data
+        const textContent = document.getElementById('raw-data-text-content');
+        if (!textContent) {
+          console.error('[RAW_DATA] Text content element not found for save');
+          return;
+        }
+
+        const rawDataText = textContent.textContent;
+
+        // Create blob and download
+        const blob = new Blob([rawDataText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `rawdata_${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+
+        console.log('[RAW_DATA] Saved raw data to file:', link.download);
+      });
+
+      titleBar.appendChild(titleText);
+      titleBar.appendChild(lockButton);
+      titleBar.appendChild(saveButton);
+
+      // Create scrolling text area - THIS is where scrollbar appears
+      const textArea = document.createElement('div');
+      textArea.id = 'raw-data-text-content';
+      textArea.style.cssText = `
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: auto;
+        padding: 10px;
+        font-family: monospace;
+        white-space: pre;
+        background-color: white;
+        color: #333;
+        box-sizing: border-box;
+        min-height: 0;
+      `;
+
+      rawDataDisplay.appendChild(titleBar);
+      rawDataDisplay.appendChild(textArea);
+
+      // console.log('[RAW_DATA] Raw data display structure created - layout: titleBar + scrollable textArea');
+
+      // Initialize scroll lock state
+      this.rawDataScrollLocked = false;
+    } else {
+      // Display already exists - update the title
+      const titleBar = rawDataDisplay.querySelector('#raw-data-title-bar');
+      if (titleBar) {
+        const titleText = titleBar.querySelector('span');
+        if (titleText) {
+          titleText.textContent = chartTitle || 'Raw Data';
+        }
+      }
+    }
+
+    // Hide canvas and show raw data display
+    this.canvas.style.display = 'none';
+    if (rawDataDisplay.parentNode !== canvasWrapper) {
+      canvasWrapper.innerHTML = '';
+      canvasWrapper.appendChild(rawDataDisplay);
+    }
+
+    // Append new data to text content (not replace)
+    const textContent = document.getElementById('raw-data-text-content');
+    if (textContent) {
+      // console.log('[RAW_DATA] Found text content element, appending', rawData.length, 'chars');
+      // Append new data directly without adding separator newline
+      textContent.textContent += rawData;
+      // console.log('[RAW_DATA] Data appended, new length:', textContent.textContent.length);
+
+      // Mark that we've displayed data up to this point
+      if (window.rawDataCollector) {
+        window.rawDataCollector.markDisplayedUpTo();
+      }
+
+      // Auto-scroll to bottom unless scroll is locked
+      if (!this.rawDataScrollLocked) {
+        textContent.scrollTop = textContent.scrollHeight;
+        // console.log('[RAW_DATA] Auto-scrolled to bottom');
+      } else {
+        // console.log('[RAW_DATA] Scroll is locked, not auto-scrolling');
+      }
+
+      // Start polling for new data to append continuously
+      this.startRawDataPolling();
+    } else {
+      console.error('[RAW_DATA] Text content element not found!');
+    }
+  }
+
+  /**
+   * Exit raw data display and restore canvas
+   */
+  exitRawDataDisplay() {
+    // console.log('[RAW_DATA] Exiting raw data display');
+
+    // Switch back to canvas display CSS mode
+    document.body.className = 'canvas-mode';
+    // console.log('[RAW_DATA] Switched back to canvas-mode CSS');
+
+    // Update refresh button state (enable when in canvas-mode)
+    this.updateRefreshButtonState();
+
+    const canvasWrapper = document.getElementById('canvas-wrapper');
+    if (!canvasWrapper) {
+      console.error('[RAW_DATA] Canvas wrapper not found in exitRawDataDisplay');
+      return;
+    }
+
+    const rawDataDisplay = document.getElementById('raw-data-text-display');
+    if (rawDataDisplay) {
+      // console.log('[RAW_DATA] Removing raw data display element');
+      canvasWrapper.innerHTML = '';
+      canvasWrapper.appendChild(this.canvas);
+    }
+
+    this.canvas.style.display = 'block';
+    // console.log('[RAW_DATA] Canvas restored');
+    // Do NOT redraw here - drawing data not ready yet
+    // The drawing will be redrawn when the queued drawing request response arrives
+
+    // Stop polling for new data
+    this.stopRawDataPolling();
+
+    // Don't clear raw data collector - it must continue collecting independently
+  }
+
+  /**
+   * Start polling for new raw data and appending to display
+   */
+  startRawDataPolling() {
+    // Stop any existing polling
+    this.stopRawDataPolling();
+
+    // console.log('[RAW_DATA] Starting data polling');
+    this.rawDataPollingInterval = setInterval(() => {
+      // Check if raw data display still exists
+      const textContent = document.getElementById('raw-data-text-content');
+      if (!textContent) {
+        // console.log('[RAW_DATA] Raw data display no longer exists, stopping polling');
+        this.stopRawDataPolling();
+        return;
+      }
+
+      // Get new data from collector
+      if (window.rawDataCollector) {
+        const newData = window.rawDataCollector.getNewData();
+        if (newData.length > 0) {
+          // console.log('[RAW_DATA] Polling found', newData.length, 'new chars, appending to display');
+          textContent.textContent += newData;
+
+          // Mark that we've displayed this data
+          window.rawDataCollector.markDisplayedUpTo();
+
+          // Auto-scroll to bottom unless scroll is locked
+          if (!this.rawDataScrollLocked) {
+            textContent.scrollTop = textContent.scrollHeight;
+          }
+        }
+      }
+    }, 100); // Poll every 100ms for new data
+  }
+
+  /**
+   * Stop polling for new raw data
+   */
+  stopRawDataPolling() {
+    if (this.rawDataPollingInterval) {
+      clearInterval(this.rawDataPollingInterval);
+      this.rawDataPollingInterval = null;
+      // console.log('[RAW_DATA] Stopped data polling');
+    }
+  }
+
+  /**
+   * Display chart from CSV data with specified labels and limit
+   * @param {string} title - Chart title
+   * @param {array} labels - Field labels [xField, yField1, yField2, ...]
+   * @param {number} limit - Maximum number of CSV lines to display (default 500)
+   */
+  displayChart(title, labels, limit = 500) {
+    const startTime = Date.now();
+    console.log('[CHART] displayChart called - title:', title, 'labels:', labels, 'limit:', limit, 'at', startTime);
+
+    if (!window.chartDisplay) {
+      console.error('[CHART] ChartDisplay not available');
+      return;
+    }
+
+    // Switch to chart display CSS mode
+    console.log('[CHART] Switching to chart-mode CSS at', Date.now(), 'elapsed:', Date.now() - startTime, 'ms');
+    document.body.className = 'chart-mode';
+    console.log('[CHART] Switched to chart-mode CSS');
+
+    // Update refresh button state (disable when not in canvas-mode)
+    this.updateRefreshButtonState();
+
+    const canvasWrapper = document.getElementById('canvas-wrapper');
+    if (!canvasWrapper) {
+      console.error('[CHART] Canvas wrapper not found');
+      return;
+    }
+
+    try {
+      // Get field count from number of labels
+      const fieldCount = labels.length;
+      console.log('[CHART] fieldCount=', fieldCount, 'at', Date.now(), 'elapsed:', Date.now() - startTime, 'ms');
+
+      // Load CSV data from collector
+      console.log('[CHART] Starting loadCSVData at', Date.now(), 'elapsed:', Date.now() - startTime, 'ms');
+      const csvLines = window.chartDisplay.loadCSVData(fieldCount);
+      console.log('[CHART] Loaded', csvLines.length, 'CSV lines for', fieldCount, 'fields at', Date.now(), 'elapsed:', Date.now() - startTime, 'ms');
+
+      // Note: If no CSV data yet, chart will still open and will be populated as data arrives via polling
+      if (csvLines.length === 0) {
+        console.log('[CHART] No CSV data available yet, will open empty chart and populate as data arrives');
+      }
+
+      // Parse CSV into dataset (will be null or empty if no CSV data)
+      console.log('[CHART] Starting parseCSVToDataset at', Date.now(), 'elapsed:', Date.now() - startTime, 'ms');
+      const dataset = window.chartDisplay.parseCSVToDataset(csvLines, labels, limit);
+      console.log('[CHART] Dataset created:', dataset ? 'success' : 'empty/null', 'at', Date.now(), 'elapsed:', Date.now() - startTime, 'ms');
+      // Continue even if dataset is null/empty - chart will populate as data arrives
+
+      // Resize canvas BEFORE creating chart so it has proper dimensions
+      console.log('[CHART] Starting resizeCanvasToFitSpace BEFORE chart creation at', Date.now(), 'elapsed:', Date.now() - startTime, 'ms');
+      window.chartDisplay.resizeCanvasToFitSpace();
+      console.log('[CHART] Finished resizeCanvasToFitSpace at', Date.now(), 'elapsed:', Date.now() - startTime, 'ms');
+
+      // Create and display chart
+      console.log('[CHART] Starting createAndDisplayChart at', Date.now(), 'elapsed:', Date.now() - startTime, 'ms');
+      const chart = window.chartDisplay.createAndDisplayChart(title, dataset, labels, this.canvas);
+      console.log('[CHART] Finished createAndDisplayChart at', Date.now(), 'elapsed:', Date.now() - startTime, 'ms');
+      if (!chart) {
+        console.error('[CHART] Failed to create chart');
+        return;
+      }
+
+      // Store reference to chart for updates
+      this.currentChart = chart;
+      this.currentChartLabels = labels;
+      this.currentChartFieldCount = fieldCount;
+      this.currentChartLimit = limit;
+
+      // Start polling for chart updates
+      console.log('[CHART] Starting startUpdatePolling at', Date.now(), 'elapsed:', Date.now() - startTime, 'ms');
+      window.chartDisplay.startUpdatePolling(chart, fieldCount, labels, limit, this.canvas);
+      console.log('[CHART] Finished startUpdatePolling at', Date.now(), 'elapsed:', Date.now() - startTime, 'ms');
+
+      console.log('[CHART] Chart display complete at', Date.now(), 'total elapsed:', Date.now() - startTime, 'ms');
+    } catch (error) {
+      console.error('[CHART] Error displaying chart:', error);
+    }
+  }
+
+  /**
+   * Exit chart display and restore canvas
+   */
+  exitChartDisplay() {
+    const exitTime = Date.now();
+    console.log('[CHART] Exiting chart display at', exitTime, 'current className=', document.body.className);
+
+    // Stop chart polling
+    console.log('[CHART] Stopping chart polling...');
+    if (window.chartDisplay) {
+      console.log('[CHART] chartDisplay exists, calling stopUpdatePolling');
+      window.chartDisplay.stopUpdatePolling();
+      window.chartDisplay.clear();
+      console.log('[CHART] Chart polling stopped and cleared');
+    } else {
+      console.log('[CHART] chartDisplay does not exist');
+    }
+
+    // Clear chart references
+    console.log('[CHART] Clearing chart references');
+    this.currentChart = null;
+    this.currentChartLabels = null;
+    this.currentChartFieldCount = null;
+    this.currentChartLimit = null;
+
+    // Switch back to canvas display CSS mode
+    console.log('[CHART] Switching back to canvas-mode CSS');
+    document.body.className = 'canvas-mode';
+    console.log('[CHART] Switched back to canvas-mode CSS');
+
+    // Update refresh button state (enable when in canvas-mode)
+    this.updateRefreshButtonState();
+
+    const canvasWrapper = document.getElementById('canvas-wrapper');
+    if (canvasWrapper) {
+      console.log('[CHART] Canvas wrapper found, restoring canvas');
+      canvasWrapper.innerHTML = '';
+      canvasWrapper.appendChild(this.canvas);
+    } else {
+      console.log('[CHART] Canvas wrapper not found');
+    }
+
+    this.canvas.style.display = 'block';
+
+    // Resize canvas to recalculate all coordinates for the restored drawing
+    console.log('[CHART] Starting handleResize after restore at', Date.now(), 'elapsed:', Date.now() - exitTime, 'ms');
+    this.handleResize();
+    console.log('[CHART] Finished handleResize after restore at', Date.now(), 'elapsed:', Date.now() - exitTime, 'ms');
+
+    console.log('[CHART] Canvas restored, exitChartDisplay complete at', Date.now(), 'elapsed:', Date.now() - exitTime, 'ms');
+    console.log('[CHART] className after exit=', document.body.className);
+  }
+
+  /**
+   * Handle valid dwg update responses ({}, {+...}, or partial updates)
+   * Sets the currentlyDisplayingDwg flag for {+ responses
+   * Processes through shadow system for drawing updates
+   */
+  handleDwgResponse(data, request) {
+    console.log('[QUEUE] Handling dwg response');
+
+    // CHECK for {+ BEFORE processDrawingData modifies the cmd structure
+    // Important: processDrawingData restructures the cmd array, so we must check before calling it
+    // Also check for pfodDrawing: 'start' (direct drawing format)
+    const isFullDwgUpdate = (data.cmd && data.cmd.length > 0 && data.cmd[0].startsWith('{+')) || (data.pfodDrawing === 'start');
+
+    // Check if this DRAG response should be discarded due to newer drag requests in queue
+    if (request.touchZoneInfo && request.touchZoneInfo.filter === TouchZoneFilters.DRAG) {
+      const cmd = request.touchZoneInfo.cmd;
+      const hasNewerDragRequest = this.requestQueue.some(queuedRequest =>
+        queuedRequest.touchZoneInfo &&
+        queuedRequest.touchZoneInfo.filter === TouchZoneFilters.DRAG &&
+        queuedRequest.touchZoneInfo.cmd === cmd
+      );
+
+      if (hasNewerDragRequest) {
+        console.log(`[QUEUE] Discarding DRAG response for cmd="${cmd}" - newer request exists in queue`);
+        return false; // Discard this response
+      }
+    }
+
+    // All responses are processed through unified shadow system (always active)
+    try {
+      console.log(`[SHADOW] Processing ${request.requestType} response for "${request.drawingName}"`);
+
+      // Insert name property from request since responses no longer include it
+      // For touch requests (touchAction/touchActionInput), don't assign drawing name to update merged data only
+      if (request.requestType === 'touch') {
+        console.log(`[QUEUE] Touch request - updating merged data only, no individual drawing updates`);
+        data.name = null; // No drawing name = update merged data only
+      } else {
+        data.name = request.drawingName;
+      }
+
+      this.processDrawingData(data, null, request.requestType);
+
+      // Set flag indicating we're now displaying a dwg (only for {+ full dwg updates, not {})
+      // Note: We check this BEFORE processDrawingData because that function modifies data.cmd
+      if (isFullDwgUpdate) {
+        this.currentlyDisplayingDwg = true;
+        console.log('[QUEUE] Set currentlyDisplayingDwg = true (full dwg update {+ received)');
+      } else {
+        console.log('[QUEUE] Not a full dwg update - currentlyDisplayingDwg remains false');
+      }
+
+      // Store the processed response
+      this.shadowProcessing.responses.set(request.drawingName, { data, request });
+
+      // Note: checkAndApplyShadowUpdates will be called by caller after sentRequest is cleared
+      // This allows the shadow system to know that this request is complete
+      return true;
+    } catch (error) {
+      console.error(`[SHADOW] Error in shadow processing:`, error);
+      console.error(`[QUEUE] Error stack:`, error.stack);
+
+      // Additional diagnostics for debugging
+      const dwgName = request.drawingName || " ";
+      console.log(`[QUEUE] Debugging state for "${dwgName}":`);
+      console.log(`- Main drawing name: ${this.shadowProcessing.shadowDrawingManager.getCurrentDrawingName()}`);
+      console.log(`- Drawing in drawings array: ${this.shadowProcessing.shadowDrawingManager.drawings.includes(request.drawingName)}`);
+      console.log(`- Drawing in drawingsData: ${this.shadowProcessing.shadowDrawingManager.drawingsData[request.drawingName] ? 'yes' : 'no'}`);
+      console.log(`- unindexedItems collection exists: ${this.shadowProcessing.shadowDrawingManager.unindexedItems[request.drawingName] ? 'yes' : 'no'}`);
+      console.log(`- indexedItems collection exists: ${this.shadowProcessing.shadowDrawingManager.indexedItems[request.drawingName] ? 'yes' : 'no'}`);
+      console.log(`- touchZonesByCmd collection exists: ${this.shadowProcessing.shadowDrawingManager.touchZonesByCmd[request.drawingName] ? 'yes' : 'no'}`);
+
+      // Try to fix any missing collections
+      if (!this.shadowProcessing.shadowDrawingManager.unindexedItems[request.drawingName] || !this.shadowProcessing.shadowDrawingManager.indexedItems[request.drawingName]) {
+        console.log(`[QUEUE] Attempting to fix missing collections for "${dwgName}"`);
+        this.shadowProcessing.shadowDrawingManager.ensureItemCollections(request.drawingName);
+      }
+
+      // Check if this is main drawing or initial connection
+      const currentDrawingName = this.shadowProcessing.shadowDrawingManager.getCurrentDrawingName();
+      const isMainOrInitial = (request.drawingName === null || request.drawingName === currentDrawingName);
+
+      if (isMainOrInitial) {
+        // Show alert dialog with Close button that reloads page
+        console.log(`[ALERT] Triggering No Connection alert for "${request.drawingName}" (main or initial connection)`);
+        console.log(`[ALERT] Error message: ${error.message}`);
+        console.log(`[ALERT] Error name: ${error.name}`);
+        this.showNoConnectionAlert();
+      } else {
+        // For inserted drawings, just log the error but continue processing
+        console.warn(`[QUEUE] ERROR: Failed to load inserted drawing "${request.drawingName}" - continuing without it`);
+      }
+
+      // Clean up shadow processing on error
+      this.cleanupShadowProcessing();
+      return false;
+    }
+  }
+
+  /**
+   * Handle non-dwg update responses (responses that are not {}, {+...}, or partial updates)
+   * Only restores from backup if currently displaying dwg, then clears flag
+   * Processes based on response type
+   */
+  handleNonDwgResponse(data, request, requestType) {
+    console.log('[QUEUE] Handling non-dwg response');
+
+    // Only restore from backup if currently displaying a dwg
+    if (this.currentlyDisplayingDwg) {
+      console.log('[QUEUE] Currently displaying dwg - restoring from backup and redrawing');
+      // Clear flag - we're no longer displaying a dwg
+      this.currentlyDisplayingDwg = false;
+      console.log('[QUEUE] Set currentlyDisplayingDwg = false (non-dwg update)');
+
+      // Cancel refresh timer since we're no longer displaying a drawing
+      if (this.updateTimer) {
+        clearTimeout(this.updateTimer);
+        this.updateTimer = null;
+        console.log('[REFRESH] Cancelled refresh timer - no longer displaying dwg');
+      }
+
+      // Restore from backup to clear touchAction overlays
+      if (window.pfodWebMouse && window.pfodWebMouse.touchActionBackups) {
+        console.log('[QUEUE] Restoring from touchAction backup');
+        for (const idx in window.pfodWebMouse.touchActionBackups.allIndexedItemsByNumber) {
+          const backupItem = window.pfodWebMouse.touchActionBackups.allIndexedItemsByNumber[idx];
+          this.shadowProcessing.shadowDrawingManager.allIndexedItemsByNumber[idx] = backupItem;
+        }
+      }
+      // Redraw canvas to show restored state (only if in dwg mode)
+      if (document.body.className === 'canvas-mode') {
+        this.redrawCanvas();
+      } else {
+        console.log('[QUEUE] Not in canvas-mode - skipping redraw. Current mode:', document.body.className);
+      }
+    } else {
+      console.log('[QUEUE] Not currently displaying dwg - skipping backup restore');
+    }
+
+    // Handle menu responses
+    if (data.cmd && data.cmd[0] && (data.cmd[0].startsWith('{,') || data.cmd[0].startsWith('{;'))) {
+      console.log('[QUEUE] Processing menu response');
+
+      // If we're in raw data display mode, exit it first
+      if (document.body.className === 'rawdata-mode') {
+        console.log('[QUEUE] Exiting raw data display before processing menu response');
+        this.exitRawDataDisplay();
+      }
+
+      var result = this.processMenuResponse(data, request);
+      if (result) {
+        // Menu responses represent navigation to a new display
+        // updateNavigationStack will skip refresh, refresh-insertDwg, and back requests internally
+        this.updateNavigationStack(this.sentRequest);
+        return; // menu was handled
+      }
+    }
+
+    // Handle specific response types
+    if (data.cmd && data.cmd[0] && data.cmd[0].startsWith('{=')) {
+      console.log('[QUEUE] Processing response - checking for chart vs raw data');
+      console.log('[QUEUE] Full data.cmd array:', data.cmd);
+      console.log('[QUEUE] window.chartDisplay exists:', !!window.chartDisplay);
+
+      // Try to parse as chart format (with pipe-delimited labels)
+      let chartInfo = null;
+      if (window.chartDisplay) {
+        console.log('[QUEUE] Calling parseChartLabels with entire cmd array');
+        chartInfo = window.chartDisplay.parseChartLabels(data.cmd);
+        console.log('[QUEUE] parseChartLabels returned:', chartInfo);
+      } else {
+        console.log('[QUEUE] WARNING: window.chartDisplay is not defined! Type:', typeof window.chartDisplay);
+      }
+
+      if (chartInfo) {
+        // This is a chart response
+        console.log('[QUEUE] Processing chart response:', chartInfo);
+        this.updateNavigationStack(this.sentRequest);
+        this.displayChart(chartInfo.title, chartInfo.labels, chartInfo.limit);
+      } else {
+        // This is a raw data response (no pipe-delimited labels or old format)
+        console.log('[QUEUE] Processing raw data response');
+
+        // Extract title for raw data display (from first element only)
+        let chartTitle = '';
+        const msgType = data.cmd[0];
+        const startIdx = msgType.indexOf('=');
+        let endIdx = msgType.indexOf('|');
+        if (endIdx === -1) {
+          endIdx = msgType.length;
+        }
+        if (startIdx !== -1) {
+          chartTitle = msgType.substring(startIdx + 1, endIdx).trim();
+        }
+
+        // Get collected raw data
+        let rawData = '';
+        if (window.rawDataCollector) {
+          rawData = window.rawDataCollector.getRawDataWithoutClearing();
+        }
+
+        if (rawData.length > 0 || chartTitle) {
+          // Raw data responses represent navigation to a new display
+          // updateNavigationStack will skip refresh, refresh-insertDwg, and back requests internally
+          this.updateNavigationStack(this.sentRequest);
+          // Display raw data
+          this.displayRawDataText(chartTitle, rawData);
+        }
+      }
+      return true;
+    }
+
+    // Add handlers for other non-dwg response types here as needed
+
+    return false;
+  }
+
+  // Update navigation stack when response represents a navigation to new display
+  // Skips updates for requests that manage their own stack (refresh, back)
+  updateNavigationStack(request) {
+    // Skip stack updates for refresh and back navigation requests
+    if (request.requestType === 'refresh' || request.requestType === 'refresh-insertDwg' || request.requestType === 'back') {
+      console.log('[TOOLBAR] Skipping stack update for request type:', request.requestType);
+      return;
+    }
+
+    // Push current command to stack if different from top
+    if (this.currentRefreshCmd) {
+      if (this.commandStack.length === 0 || this.currentRefreshCmd !== this.commandStack[this.commandStack.length - 1]) {
+        this.commandStack.push(this.currentRefreshCmd);
+        console.log('[TOOLBAR] Pushed to stack (navigation):', this.currentRefreshCmd);
+      }
+    }
+    // Update current command to the new display
+    this.currentRefreshCmd = request.cmd;
+    this.currentRefreshCmdType = request.requestType;
+    console.log('[TOOLBAR] Updated currentRefreshCmd (navigation):', this.currentRefreshCmd, 'type:', request.requestType);
+  }
+
+  // Clear all pending requests from queue (keeps sentRequest intact)
+  clearPendingQueue() {
+    const clearTime = Date.now();
+    const queueLength = this.requestQueue.length;
+    console.log(`[QUEUE] Clearing queue at ${clearTime}, length=${queueLength}, sentRequest: ${this.sentRequest ? this.sentRequest.drawingName + '(' + this.sentRequest.requestType + ')' : 'null'}`);
+    this.requestQueue = [];
+    console.log(`[QUEUE] Cleared ${queueLength} pending requests at ${Date.now()}, elapsed: ${Date.now() - clearTime}ms`);
+  }
+
   // Process the request queue
   async processRequestQueue() {
     // Safety check: ensure requestQueue is initialized
@@ -1033,11 +2032,15 @@ class DrawingViewer {
         //console.log(`[QUEUE] NO sentRequest and queue empty`);
         this.setProcessingQueue(false);
 
-        // Only redraw if shadow processing is not active - check inUse flag
+        // Only redraw if shadow processing is not active - check inUse flag (and only if in dwg mode)
         if (!this.shadowProcessing.shadowDrawingManager.inUse) {
             //console.log(`[QUEUE] No shadow processing active - calling redrawCanvas for final display`);
             setTimeout(() => {
-                this.redrawCanvas();
+                if (document.body.className === 'canvas-mode') {
+                    this.redrawCanvas();
+                } else {
+                    console.log('[QUEUE] Not in canvas-mode - skipping final redraw. Current mode:', document.body.className);
+                }
                 this.scheduleNextUpdate();
             }, 10);
         } else {
@@ -1124,7 +2127,9 @@ class DrawingViewer {
 
      // Don't clear sentRequest here - will be cleared after processing is complete
 
+      // Track request type for logging purposes
       let lastRequest = request.requestType;
+
       /***
       // Prefilter JSON to fix newlines in strings before parsing
       // prehaps add this back later to catch all control chars
@@ -1177,70 +2182,6 @@ class DrawingViewer {
         cacheResponse(data, request, this.connectionManager);
       }
 
-      // Handle different response types for
-      let cmd;
-      if (data.cmd) {
-        cmd = data.cmd;
-        let msgType = cmd[0];
-        if ((msgType.startsWith("{,") || msgType.startsWith("{;"))) {
-          console.log('[QUEUE] Got a menu response ', JSON.stringify(data,null,2));
-          lastRequest = 'mainMenu'  // kluge to handle mainmenu update response to a button press Only from pfodDevice with cmds
-        }
-      } else {
-        console.log('[QUEUE] No cmd field in server response ', JSON.stringify(data));
-      }
-
-
-      if (lastRequest === 'mainMenu') {
-        var result = this.processMenuResponse(data, request);
-        if (!result) {
-          console.error(`[QUEUE] Invalid mainMenu response format. Got: ${cmd}`);
-        }
-
-        // Continue processing immediately - no timeout needed
-    console.warn(`[QUEUE] after process mainMenu the current queue is:`, JSON.stringify(this.requestQueue, null, 2));
-        // Clear sentRequest after mainMenu processing is complete
-        console.log(`[QUEUE] COMPLETED: "${request.drawingName}" (${request.requestType}) - clearing sentRequest after mainMenu processing`);
-        console.log(`[SENTREQUEST] CLEARED: "${request.drawingName}" (${request.requestType}) at ${new Date().toISOString()}`);
-        this.sentRequest = null;
-        this.processRequestQueue();
-        return;
-        // else continue to process touch
-      }
-
-      // Check if server returned empty cmd response for a drawing request
-      if (this.isEmptyCmd(data.cmd) && (lastRequest === 'insertDwg')) {
-        console.warn(`[QUEUE] WARNING: Requested drawing "${request.drawingName}" but server returned empty cmd "{}". Drawing not found on server.`);
-      }
-
-
-      // Check if this response should be discarded due to newer drag requests in queue
-      if (request.touchZoneInfo && request.touchZoneInfo.filter === TouchZoneFilters.DRAG) {
-        const cmd = request.touchZoneInfo.cmd;
-        const hasNewerDragRequest = this.requestQueue.some(queuedRequest =>
-          queuedRequest.touchZoneInfo &&
-          queuedRequest.touchZoneInfo.filter === TouchZoneFilters.DRAG &&
-          queuedRequest.touchZoneInfo.cmd === cmd
-        );
-
-        if (hasNewerDragRequest) {
-          console.log(`[QUEUE] Discarding response for DRAG cmd="${cmd}" - newer request exists in queue`);
-          // Remove the processed request from the queue first
-//          this.sentRequest = null;
-//          this.requestQueue.shift();
-          console.warn(`[QUEUE] after newerDragRequest the current queue is:`, JSON.stringify(this.requestQueue, null, 2));
-
-      //    this.processRequestQueue();
-          // Continue processing next request
-          setTimeout(() => {
-            if (this.sentRequest || this.requestQueue.length !== 0) {
-              this.processRequestQueue();
-            }
-          }, 10);
-          return;
-        } 
-      }
-
       // Handle the response data
       if (this.touchState.isDown) {
         // Mouse is down - queue the response to prevent flashing
@@ -1271,133 +2212,181 @@ class DrawingViewer {
         console.log(`[QUEUE] Added to pending queue. Total pending responses: ${this.pendingResponseQueue.length}`);
       } else {
         // Mouse is up - process immediately
-        // No need to restore - we'll do a full merge with the new response data
-
 
         console.log(`[QUEUE] Processing data for drawing "${request.drawingName}" (type: ${request.requestType})`);
-        // check for {|+ menu return to load/reload dwg
-        var result = this.processMenuResponse(data, request);
-        if (result) {
-          return; // have processed this
-        } // else continue
-        // Insert name property from request since responses no longer include it
-        // For touch requests (touchAction/touchActionInput), don't assign drawing name to update merged data only
-        if (request.requestType === 'touch') {
-          console.log(`[QUEUE] Touch request - updating merged data only, no individual drawing updates`);
-          data.name = null; // No drawing name = update merged data only
-        } else {
-          data.name = request.drawingName;
-        }
-//         this.sentRequest = null;
-//         this.requestQueue.shift();
-         console.warn(`[QUEUE] after mouse up the current queue is:`, JSON.stringify(this.requestQueue, null, 2));
 
-
-        // All responses are processed through unified shadow system (always active)
-        try {
-          console.log(`[SHADOW] Processing ${request.requestType} response for "${request.drawingName}"`);
-
-          // Process the response immediately to discover insertDwg items and queue nested requests
-          // For touch requests, don't assign drawing name to prevent individual drawing updates
-          if (request.requestType === 'touch') {
-            data.name = null; // No drawing name = update merged data only
-          } else {
-            data.name = request.drawingName;
+        // Detect response type for logging
+        if (data.pfodDrawing === 'start' || data.pfodDrawing === 'update') {
+          lastRequest = 'dwgUpdate';
+        } else if (data.cmd && data.cmd[0]) {
+          if (data.cmd[0].startsWith('{,') || data.cmd[0].startsWith('{;')) {
+            lastRequest = 'mainMenu';
+          } else if (data.cmd[0].startsWith('{=')) {
+            lastRequest = 'rawData';
+          } else if (data.cmd[0].startsWith('{+')) {
+            lastRequest = 'dwgUpdate';
+          } else if (this.isEmptyCmd(data.cmd)) {
+            lastRequest = 'empty';
           }
-          this.processDrawingData(data, null, request.requestType);
+        }
 
-          // Store the processed response
-          this.shadowProcessing.responses.set(request.drawingName, { data, request });
+        // Check if this is a valid dwg update:
+        // 1. {+ response (full or partial dwg update), OR
+        // 2. pfodDrawing: 'start' or 'update' (direct drawing format), OR
+        // 3. {} response AND currently displaying a dwg (update to current dwg)
+        const isFullOrPartialDwgUpdate = (data.cmd && data.cmd.length > 0 && data.cmd[0].startsWith('{+')) || (data.pfodDrawing === 'start') || (data.pfodDrawing === 'update');
+        const isEmptyResponse = this.isEmptyCmd(data.cmd);
+        const isDwgUpdate = isFullOrPartialDwgUpdate || (this.currentlyDisplayingDwg && isEmptyResponse);
 
-          // Check if we need to apply collected responses
-          this.checkAndApplyShadowUpdates();
-
+        // If not a valid dwg update, handle as non-dwg response (menu, raw data, etc.)
+        if (!isDwgUpdate) {
+          console.log(`[QUEUE] Response is NOT a valid dwg update (${lastRequest}) - handling as non-dwg response (isFullOrPartial=${isFullOrPartialDwgUpdate}, isEmpty=${isEmptyResponse}, currentlyDwg=${this.currentlyDisplayingDwg})`);
+          this.handleNonDwgResponse(data, request, request.requestType);
           // Clear the sent request and continue processing
-          //console.log(`[QUEUE] COMPLETED: "${request.drawingName}" (${request.requestType}) - clearing sentRequest`);
-          //console.log(`[SENTREQUEST] CLEARED: "${request.drawingName}" (${request.requestType}) at ${new Date().toISOString()}`);
+          console.log(`[QUEUE] COMPLETED: ${lastRequest} response - clearing sentRequest`);
           this.sentRequest = null;
-          //console.log(`[QUEUE] After completion - queue length: ${this.requestQueue.length}, sentRequest: null`);
+          this.processRequestQueue();
+          return;
+        }
 
-          // Check shadow processing again now that sentRequest is cleared
+        // Handle valid dwg response through dedicated method
+        if (this.handleDwgResponse(data, request)) {
+          // Success - clear the sent request and continue processing
+          console.log(`[QUEUE] COMPLETED: ${lastRequest} response - clearing sentRequest`);
+          this.sentRequest = null;
+          // Now check if we should apply collected shadow updates (after sentRequest is cleared)
           this.checkAndApplyShadowUpdates();
+          this.processRequestQueue();
+          return;
+        } else {
+          // Error was already handled in handleDwgResponse
+          // Clear the failed request and continue processing
+          console.log(`[SENTREQUEST] CLEARED: "${request.drawingName}" (${request.requestType}) at ${new Date().toISOString()}`);
+          this.sentRequest = null;
 
+          // For inserted drawings, if we're at the end of the queue, proceed with redraw (only if in dwg mode)
+          if (this.requestQueue.length === 0 && !this.sentRequest) {
+            console.log(`[QUEUE] Queue empty after failed request. Drawing with available data.`);
+            this.setProcessingQueue(false);
+            if (document.body.className === 'canvas-mode') {
+              this.redrawCanvas();
+            } else {
+              console.log('[QUEUE] Not in canvas-mode - skipping redraw after failed request. Current mode:', document.body.className);
+            }
+            // Resume update scheduling after failed request cleanup
+            this.scheduleNextUpdate();
+          }
+
+          // Continue processing queue
           setTimeout(() => {
-             this.processRequestQueue();
+            if (this.sentRequest || this.requestQueue.length !== 0) {
+              this.processRequestQueue();
+            }
           }, 10);
           return;
-        } catch (error) {
-          console.error(`[SHADOW] Error in shadow processing:`, error);
-          alert(`Shadow processing error: ${error.message}`);
-          // Clean up shadow processing on error
-          this.cleanupShadowProcessing();
-          return; // Stop processing on error
         }
       }
 
       // Legacy queue completion logic removed - now handled by shadow processing atomic updates
 
     } catch (error) {
+      // Catch any errors from JSON parsing or other non-handler logic
       let dwgName = " ";
       if  (request.drawingName !== undefined && request.drawingName !== null) {
         dwgName = request.drawingName;
       }
       console.error(`[QUEUE] Error processing request for "${dwgName}":`, error);
+      console.error(`[QUEUE] Error stack:`, error.stack);
 
-      // Additional diagnostics for debugging
-      console.log(`[QUEUE] Debugging state for "${dwgName}":`);
-      console.log(`- Main drawing name: ${this.shadowProcessing.shadowDrawingManager.getCurrentDrawingName()}`);
-      console.log(`- Drawing in drawings array: ${this.shadowProcessing.shadowDrawingManager.drawings.includes(request.drawingName)}`);
-      console.log(`- Drawing in drawingsData: ${this.shadowProcessing.shadowDrawingManager.drawingsData[request.drawingName] ? 'yes' : 'no'}`);
-      console.log(`- unindexedItems collection exists: ${this.shadowProcessing.shadowDrawingManager.unindexedItems[request.drawingName] ? 'yes' : 'no'}`);
-      console.log(`- indexedItems collection exists: ${this.shadowProcessing.shadowDrawingManager.indexedItems[request.drawingName] ? 'yes' : 'no'}`);
-      console.log(`- touchZonesByCmd collection exists: ${this.shadowProcessing.shadowDrawingManager.touchZonesByCmd[request.drawingName] ? 'yes' : 'no'}`);
+      // Check if this is a retry exhaustion error (timeout or no response after retries)
+      const isRetryExhausted = error.message && (
+        error.message.includes('All') && error.message.includes('attempts exhausted') ||
+        error.message.includes('timeout') ||
+        error.message.includes('device may not be responding')
+      );
 
-      // Try to fix any missing collections
-      if (!this.shadowProcessing.shadowDrawingManager.unindexedItems[request.drawingName] || !this.shadowProcessing.shadowDrawingManager.indexedItems[request.drawingName]) {
-        console.log(`[QUEUE] Attempting to fix missing collections for "${dwgName}"`);
-        this.shadowProcessing.shadowDrawingManager.ensureItemCollections(request.drawingName);
+      // Check if this is a JSON parsing error
+      const isJSONError = error instanceof SyntaxError;
+
+      // Check if this is an initial request timeout
+      const isInitialTimeout = request.isInitial && isRetryExhausted;
+
+      // If initial request timed out, open chart display instead of showing alert
+      if (isInitialTimeout) {
+        console.log('[QUEUE] Initial request timed out - opening chart display');
+        this.initialRequestQueued = false;
+        // Switch to chart display CSS mode
+        document.body.className = 'chart-mode';
+        console.log('[CHART] Switched to chart-mode CSS');
+        // Resize canvas for chart display
+        this.displayChart("Chart", "", 500);
+        //window.chartDisplay.resizeCanvasToFitSpace(this.canvas);
+        // Clear the failed request and continue
+        console.log(`[SENTREQUEST] CLEARED: "${request.drawingName}" (${request.requestType}) at ${new Date().toISOString()}`);
+        this.sentRequest = null;
+        return;
       }
 
-      // Retries are now handled internally by connectionManager
-      // If we get here, all retries have been exhausted
-      console.error(`[QUEUE] Error after all retries exhausted by connectionManager for "${request.drawingName}": ${error.message}`);
+      // Display alert to user for all other errors
+      if (isRetryExhausted) {
+        const maxRetries = this.connectionManager.getMaxRetries();
+        const totalAttempts = maxRetries + 1;
 
-      // Display error message for main drawing or initial connection (null drawing name)
-      const currentDrawingName = this.shadowProcessing.shadowDrawingManager.getCurrentDrawingName();
-      const isMainOrInitial = (request.drawingName === null || request.drawingName === currentDrawingName);
-
-      if (isMainOrInitial) {
-        // Show alert dialog with Close button that reloads page
-        console.log(`[ALERT] Triggering No Connection alert for "${request.drawingName}" (main or initial connection)`);
-        this.showNoConnectionAlert();
+        pfodAlert(
+          `Connection failed after ${totalAttempts} attempts.\n\n` +
+          `${error.message}\n\n` +
+          `You can:\n` +
+          `• Click "Close" to dismiss this alert\n` +
+          `• Use the pfodWeb toolbar's reload button to try again\n` +
+          `• Use the pfodWeb toolbar's back button to go back`,
+          () => {
+            // Optional callback after user closes the alert
+            console.log('[QUEUE] User closed retry failure alert');
+          }
+        );
+      } else if (isJSONError) {
+        // JSON parsing error
+        pfodAlert(
+          `Invalid response format - failed to parse data.\n\n` +
+          `${error.message}\n\n` +
+          `You can:\n` +
+          `• Click "Close" to dismiss this alert\n` +
+          `• Use the pfodWeb toolbar's reload button to try again\n` +
+          `• Use the pfodWeb toolbar's back button to go back`,
+          () => {
+            // Optional callback after user closes the alert
+            console.log('[QUEUE] User closed JSON error alert');
+          }
+        );
       } else {
-        // For inserted drawings, just log the error but continue processing
-        console.warn(`[QUEUE] ERROR: Failed to load inserted drawing "${request.drawingName}" - continuing without it`);
+        // All other errors are connection issues
+        pfodAlert(
+          `Connection issue detected.\n\n` +
+          `${error.message}\n\n` +
+          `You can:\n` +
+          `• Click "Close" to dismiss this alert\n` +
+          `• Use the pfodWeb toolbar's reload button to reconnect\n` +
+          `• Use the pfodWeb toolbar's back button to go back`,
+          () => {
+            // Optional callback after user closes the alert
+            console.log('[QUEUE] User closed connection issue alert');
+          }
+        );
       }
 
       // Clear the failed request
       console.log(`[SENTREQUEST] CLEARED: "${request.drawingName}" (${request.requestType}) at ${new Date().toISOString()}`);
       this.sentRequest = null;
 
-      // For inserted drawings, if we're at the end of the queue, proceed with redraw
-      if (this.requestQueue.length === 0 && !this.sentRequest) {
-        console.log(`[QUEUE] Queue empty after failed request. Drawing with available data.`);
-        this.setProcessingQueue(false);
-        this.redrawCanvas();
-        // Resume update scheduling after failed request cleanup
-        this.scheduleNextUpdate();
-      }
-    } finally {
-      // If there are more requests in the queue, continue processing
-  //    if (this.requestQueue.length > 0 && !this.sentRequest) {
-        // Add a small delay between requests
-        console.warn(`[QUEUE] Finally post processRequestQueue.`);
+      // Only continue processing queue if this was not a critical error
+      // (JSON errors can sometimes be recovered by retrying)
+      if (isJSONError) {
         setTimeout(() => {
-            if (this.sentRequest || this.requestQueue.length !== 0) {
-              this.processRequestQueue();
-            }
+          if (this.sentRequest || this.requestQueue.length !== 0) {
+            this.processRequestQueue();
+          }
         }, 10);
-  //    }
+      }
     }
   }
 
@@ -1406,6 +2395,12 @@ class DrawingViewer {
   async queueDrawingUpdate(drawingName) {
     try {
       console.log(`[QUEUE_DWG] Preparing fetch for drawing "${drawingName}" at ${new Date().toISOString()}`);
+
+      // Warn if drawingName is null/undefined
+      if (!drawingName) {
+        console.warn(`[QUEUE_DWG] WARNING: drawingName is null or undefined!`);
+        console.trace('[QUEUE_DWG] Stack trace for null drawingName');
+      }
 
       const savedVersion = localStorage.getItem(`${drawingName}_version`);
       const savedData = localStorage.getItem(`${drawingName}_data`);
@@ -1418,6 +2413,8 @@ class DrawingViewer {
         console.log('No valid saved version+data pair - requesting fresh data (dwg:start)');
         cmd = '{' + drawingName + '}';
       }
+
+      console.log(`[QUEUE_DWG] Constructed command: "${cmd}"`);
 
       /**
       // Use /pfodWeb endpoint with cmd parameter in {drawingName} format
@@ -1463,38 +2460,48 @@ class DrawingViewer {
 
       console.log(`[QUEUE] Processing queued response for "${request.drawingName}"`);
 
-      // Check if we have touchAction backup data - if so, we need to restore before processing response
-      if (window.pfodWebMouse.touchActionBackups) {
-        console.log(`[QUEUE] TouchAction backup exists - processing response against backup data`);
-        console.log(`[QUEUE] Response should restore original state before applying new data`);
-        console.log(`[QUEUE] Backup indexed items keys: [${Object.keys(window.pfodWebMouse.touchActionBackups.allIndexedItemsByNumber).join(', ')}]`);
-        // Log the visible state of items 7, 8, 9 in the backup
-        [7, 8, 9].forEach(idx => {
-          const backupItem = window.pfodWebMouse.touchActionBackups.allIndexedItemsByNumber[idx];
-          console.log(`[QUEUE] Backup item ${idx}: ${backupItem ? `visible=${backupItem.visible}` : 'not found'}`);
-        });
-      } else {
-        console.log(`[QUEUE] No touchAction backup - processing response normally`);
+      // Detect response type for logging
+      let responseType = request.requestType;
+      if (data.pfodDrawing === 'start' || data.pfodDrawing === 'update') {
+        responseType = 'dwgUpdate';
+      } else if (data.cmd && data.cmd[0]) {
+        if (data.cmd[0].startsWith('{,') || data.cmd[0].startsWith('{;')) {
+          responseType = 'mainMenu';
+        } else if (data.cmd[0].startsWith('{=')) {
+          responseType = 'rawData';
+        } else if (data.cmd[0].startsWith('{+')) {
+          responseType = 'dwgUpdate';
+        } else if (this.isEmptyCmd(data.cmd)) {
+          responseType = 'empty';
+        }
       }
 
-      // Insert name property from request since responses no longer include it
-      data.name = request.drawingName;
+      // Check if this is a valid dwg update:
+      // 1. {+ response (full or partial dwg update), OR
+      // 2. pfodDrawing: 'start' or 'update' (direct drawing format), OR
+      // 3. {} response AND currently displaying a dwg (update to current dwg)
+      const isFullOrPartialDwgUpdate = (data.cmd && data.cmd.length > 0 && data.cmd[0].startsWith('{+')) || (data.pfodDrawing === 'start') || (data.pfodDrawing === 'update');
+      const isEmptyResponse = this.isEmptyCmd(data.cmd);
+      const isDwgUpdate = isFullOrPartialDwgUpdate || (this.currentlyDisplayingDwg && isEmptyResponse);
 
-      // Process the response data using shadow drawing manager to preserve backup state
-      this.processDrawingData(data, null, request.requestType);
+      if (!isDwgUpdate) {
+        console.log(`[QUEUE] Pending response is NOT a current dwg update (${responseType}) - handling as non-dwg response (isFullOrPartial=${isFullOrPartialDwgUpdate}, isEmpty=${isEmptyResponse}, currentlyDwg=${this.currentlyDisplayingDwg})`);
+        // Handle the non-dwg response (checks flag, restores backup, redraws, and processes based on type)
+        this.handleNonDwgResponse(data, request, request.requestType);
+        // Skip normal processing for non-dwg responses
+        continue;
+      }
 
-      // Log the state after processing the response
-      if (this.shadowProcessing.shadowDrawingManager) {
-        console.log(`[QUEUE] After processing response, shadow manager indexed items: [${Object.keys(this.shadowProcessing.shadowDrawingManager.allIndexedItemsByNumber || {}).join(', ')}]`);
-        [7, 8, 9].forEach(idx => {
-          const shadowItem = this.shadowProcessing.shadowDrawingManager.allIndexedItemsByNumber[idx];
-          console.log(`[QUEUE] After response, shadow item ${idx}: ${shadowItem ? `visible=${shadowItem.visible}` : 'not found'}`);
-        });
+      // Handle valid dwg response through dedicated method
+      if (this.handleDwgResponse(data, request)) {
+        console.log(`[QUEUE] Successfully processed dwg response from pending queue`);
+      } else {
+        // Error was already logged in handleDwgResponse
+        console.error(`[QUEUE] Failed to process dwg response from pending queue`);
       }
     }
 
     console.log(`[QUEUE] Finished processing all pending responses`);
-    //this.sentRequest = null;
 
     // Apply shadow updates to redraw manager and redraw after processing all responses
     if (hadPendingResponses) {
@@ -1508,6 +2515,7 @@ class DrawingViewer {
         }
 
         // Check if we should apply shadow updates now or wait for more related requests
+        // Do this after sentRequest is cleared so the shadow system knows requests are complete
         console.log(`[QUEUE] Checking for more related requests before applying shadow updates`);
         this.checkAndApplyShadowUpdates();
       }
@@ -1563,33 +2571,67 @@ class DrawingViewer {
     console.log(`[SHADOW] Applying shadow updates atomically - copying processed data to redraw`);
 
     try {
+      // Get the main drawing name from shadow manager (always has drawings array populated)
+      const mainDrawingName = this.shadowProcessing.shadowDrawingManager.drawings.length > 0 ?
+        this.shadowProcessing.shadowDrawingManager.drawings[0] : '';
+      console.log(`[REFRESH] Using shadow drawing name: ${mainDrawingName}`);
+
+      // Get the current refresh rate BEFORE updating (may be 0, very long, or undefined)
+      const oldRefreshData = this.redraw.redrawDrawingManager.drawingsData[mainDrawingName]?.data;
+      const oldRefreshRate = oldRefreshData?.refresh;
+      console.log(`[REFRESH] Before shadow update - oldRefreshRate: ${oldRefreshRate}`);
+
       // Copy processed shadow data to isolated redraw drawing manager
       // processDrawingData has already been called and processed data in shadow copy
-      if (this.shadowProcessing.shadowDrawingManager) {
-        console.log(`[SHADOW] Updating redraw with processed shadow data`);
+      console.log(`[SHADOW] Updating redraw with processed shadow data`);
 
-        // Check if any responses are touch requests - if so, skip merge
-        const isTouchRequest = Array.from(this.shadowProcessing.responses.values())
-          .some(response => response.request.requestType === 'touch');
+      // Check if any responses are touch requests - if so, skip merge
+      const isTouchRequest = Array.from(this.shadowProcessing.responses.values())
+        .some(response => response.request.requestType === 'touch');
 
-        if (isTouchRequest) {
-          console.log(`[SHADOW] Touch request detected - skipping merge operation, using shadow data as-is`);
-        } else {
-          // Create merged collections using DrawingMerger after all individual drawings are processed
-          console.log(`[SHADOW] Normal request - performing merge operation`);
-          const drawingMerger = new window.DrawingMerger(this.shadowProcessing.shadowDrawingManager);
-          drawingMerger.mergeAllDrawings();
+      if (isTouchRequest) {
+        console.log(`[SHADOW] Touch request detected - skipping merge operation, using shadow data as-is`);
+      } else {
+        // Create merged collections using DrawingMerger after all individual drawings are processed
+        console.log(`[SHADOW] Normal request - performing merge operation`);
+        const drawingMerger = new window.DrawingMerger(this.shadowProcessing.shadowDrawingManager);
+        drawingMerger.mergeAllDrawings();
+      }
+
+      // Atomically update redraw drawing manager with processed shadow copy (triggers redraw)
+      this.redraw.updateFromShadow(this.shadowProcessing.shadowDrawingManager);
+
+      // Get the new refresh rate AFTER updating
+      const newRefreshData = this.redraw.redrawDrawingManager.drawingsData[mainDrawingName]?.data;
+      const newRefreshRate = newRefreshData?.refresh;
+      console.log(`[REFRESH] After shadow update - newRefreshRate: ${newRefreshRate}`);
+
+      // If refresh rate changed, explicitly reschedule the timer with the new rate
+      if (oldRefreshRate !== newRefreshRate) {
+        console.log(`[REFRESH] Refresh rate changed: ${oldRefreshRate}ms → ${newRefreshRate}ms`);
+
+        // Cancel old timer if it exists
+        if (this.updateTimer) {
+          clearTimeout(this.updateTimer);
+          this.updateTimer = null;
+          console.log(`[REFRESH] Cancelled old refresh timer (rate was ${oldRefreshRate}ms)`);
         }
 
-        // Atomically update redraw drawing manager with processed shadow copy (triggers redraw)
-        this.redraw.updateFromShadow(this.shadowProcessing.shadowDrawingManager);
+        // Schedule new timer with new rate
+        if (newRefreshRate && newRefreshRate > 0) {
+          console.log(`[REFRESH] Scheduling new refresh timer with ${newRefreshRate}ms interval`);
+          this.updateTimer = setTimeout(() => this.fetchRefresh(), newRefreshRate);
+        } else {
+          console.log(`[REFRESH] New refresh rate is ${newRefreshRate} - automatic updates disabled`);
+        }
+      } else {
+        console.log(`[REFRESH] Refresh rate unchanged (${oldRefreshRate}ms)`);
+        // Resume update scheduling with existing rate
+        this.scheduleNextUpdate();
       }
 
       // Clean up shadow processing session before resuming updates
       this.cleanupShadowProcessing();
-
-      // Resume update scheduling now that shadow updates are applied
-      this.scheduleNextUpdate();
 
     } catch (error) {
       console.error(`[SHADOW] Error applying shadow updates:`, error);
@@ -2163,6 +3205,71 @@ async function loadDependencies() {
   const dependencies = [
     './version.js',
     './connectionManager.js',
+    './csvCollector.js',
+    './rawDataCollector.js',
+    // JSFreeChart files - must load in dependency order
+    './jsfreechart/src/JSFreeChart.js',
+    './jsfreechart/src/Module.js',
+    './jsfreechart/src/Args.js',
+    './jsfreechart/src/Utils.js',
+    './jsfreechart/src/graphics/Color.js',
+    './jsfreechart/src/Colors.js',
+    './jsfreechart/src/graphics/Point2D.js',
+    './jsfreechart/src/graphics/Rectangle.js',
+    './jsfreechart/src/graphics/Dimension.js',
+    './jsfreechart/src/graphics/HAlign.js',
+    './jsfreechart/src/graphics/RectangleEdge.js',
+    './jsfreechart/src/graphics/Insets.js',
+    './jsfreechart/src/graphics/Offset2D.js',
+    './jsfreechart/src/graphics/Scale2D.js',
+    './jsfreechart/src/graphics/Fit2D.js',
+    './jsfreechart/src/graphics/Stroke.js',
+    './jsfreechart/src/graphics/TextAnchor.js',
+    './jsfreechart/src/graphics/Font.js',
+    './jsfreechart/src/graphics/LineCap.js',
+    './jsfreechart/src/graphics/LineJoin.js',
+    './jsfreechart/src/graphics/RefPt2D.js',
+    './jsfreechart/src/graphics/Anchor2D.js',
+    './jsfreechart/src/graphics/BaseContext2D.js',
+    './jsfreechart/src/graphics/CanvasContext2D.js',
+    './jsfreechart/src/data/Map.js',
+    './jsfreechart/src/data/Range.js',
+    './jsfreechart/src/data/StandardXYDataset.js',
+    './jsfreechart/src/data/XYDatasetUtils.js',
+    './jsfreechart/src/data/KeyedValues2DDataset.js',
+    './jsfreechart/src/table/BaseElement.js',
+    './jsfreechart/src/table/TableElement.js',
+    './jsfreechart/src/table/TextElement.js',
+    './jsfreechart/src/table/StandardRectanglePainter.js',
+    './jsfreechart/src/table/FlowElement.js',
+    './jsfreechart/src/table/RectangleElement.js',
+    './jsfreechart/src/table/GridElement.js',
+    './jsfreechart/src/renderer/ColorSource.js',
+    './jsfreechart/src/renderer/StrokeSource.js',
+    './jsfreechart/src/renderer/BaseXYRenderer.js',
+    './jsfreechart/src/renderer/ScatterRenderer.js',
+    './jsfreechart/src/renderer/XYLineRenderer.js',
+    './jsfreechart/src/util/Format.js',
+    './jsfreechart/src/util/NumberFormat.js',
+    './jsfreechart/src/axis/AxisSpace.js',
+    './jsfreechart/src/axis/LabelOrientation.js',
+    './jsfreechart/src/axis/TickMark.js',
+    './jsfreechart/src/axis/NumberTickSelector.js',
+    './jsfreechart/src/axis/ValueAxis.js',
+    './jsfreechart/src/axis/BaseValueAxis.js',
+    './jsfreechart/src/axis/LinearAxis.js',
+    './jsfreechart/src/labels/StandardXYLabelGenerator.js',
+    './jsfreechart/src/legend/LegendBuilder.js',
+    './jsfreechart/src/legend/LegendItemInfo.js',
+    './jsfreechart/src/legend/StandardLegendBuilder.js',
+    './jsfreechart/src/plot/XYPlot.js',
+    './jsfreechart/src/Chart.js',
+    './jsfreechart/src/Charts.js',
+    // Chart display and utility files
+    './chartDisplay.js',
+    './caching.js',
+    './messageViewer.js',
+    // Drawing and core files
     './DrawingManager.js',
     './displayTextUtils.js',
     './redraw.js',
@@ -2197,9 +3304,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   await loadDependencies();
   await initializeApp();
 });
+
 window.addEventListener('resize', () => {
+  console.log('[WINDOW_RESIZE] Resize event fired, drawingViewer exists:', !!drawingViewer, 'className:', document.body.className);
   if (drawingViewer) {
     drawingViewer.handleResize();
+  } else {
+    console.log('[WINDOW_RESIZE] drawingViewer not ready yet, ignoring resize');
   }
 });
 

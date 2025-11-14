@@ -173,10 +173,24 @@ function findMatchingClosingBrace(text, startIdx) {
 class ConnectionManager {
   // Static message collector shared across all connection managers
   static messageCollector = null;
+  // Static CSV collector shared across all connection managers
+  static csvCollector = null;
+  // Static raw data collector shared across all connection managers
+  static rawDataCollector = null;
 
   static setMessageCollector(collector) {
     ConnectionManager.messageCollector = collector;
     console.log('[CONNECTION_MANAGER] Message collector set');
+  }
+
+  static setCSVCollector(collector) {
+    ConnectionManager.csvCollector = collector;
+    console.log('[CONNECTION_MANAGER] CSV collector set');
+  }
+
+  static setRawDataCollector(collector) {
+    ConnectionManager.rawDataCollector = collector;
+    console.log('[CONNECTION_MANAGER] Raw data collector set');
   }
 
   constructor(config = {}) {
@@ -682,20 +696,19 @@ class SerialConnection {
         const text = new TextDecoder().decode(value);
         this.readBuffer += text;
 
-        // Reset timeout each time we receive data
-        if (this.timeoutId && this.responseReject) {
-          clearTimeout(this.timeoutId);
-          // Use the current timeout value that was set in send()
-    //      console.log(`[SERIAL_CONNECTION] Resetting timeout to ${this.currentTimeout}ms after receiving data`);
-          this.timeoutId = setTimeout(() => {
-            if (this.responseReject) {
-              this.responseReject(new Error('Serial response timeout - device may not be responding'));
-              this.responseResolve = null;
-              this.responseReject = null;
-              this.timeoutId = null;
-            }
-          }, this.currentTimeout);
+        // Process raw character stream for CSV data BEFORE message fragmentation
+        if (this.connectionManager.constructor.csvCollector) {
+          this.connectionManager.constructor.csvCollector.processCharacters(text);
         }
+
+        // Process raw character stream for raw data collection BEFORE message fragmentation
+        if (this.connectionManager.constructor.rawDataCollector) {
+          this.connectionManager.constructor.rawDataCollector.processCharacters(text);
+        }
+
+        // NOTE: Do NOT reset timeout here - timeout should apply to the entire response,
+        // not reset on partial data. Only clear timeout when complete response is received
+        // in processReadBuffer()
 
         // Check if we have a complete pfod response
         this.processReadBuffer();
@@ -1169,27 +1182,26 @@ class BLEConnection {
 
   /**
    * Handle incoming data from BLE device
-   * Resets timeout each time data is received
+   * Buffers data until complete response is received
    */
   handleCharacteristicChange(event) {
     const text = new TextDecoder().decode(event.target.value);
     this.readBuffer += text;
     console.log(`[BLE_CONNECTION] Received data: ${text}`);
 
-    // Reset timeout each time we receive data
-    if (this.timeoutId && this.responseReject) {
-      clearTimeout(this.timeoutId);
-      const timeout = this.connectionManager.getResponseTimeout();
-      console.log(`[BLE_CONNECTION] Resetting timeout to ${timeout}ms after receiving data`);
-      this.timeoutId = setTimeout(() => {
-        if (this.responseReject) {
-          this.responseReject(new Error('BLE response timeout - device may not be responding'));
-          this.responseResolve = null;
-          this.responseReject = null;
-          this.timeoutId = null;
-        }
-      }, timeout);
+    // Process raw character stream for CSV data BEFORE message fragmentation
+    if (this.connectionManager.constructor.csvCollector) {
+      this.connectionManager.constructor.csvCollector.processCharacters(text);
     }
+
+    // Process raw character stream for raw data collection BEFORE message fragmentation
+    if (this.connectionManager.constructor.rawDataCollector) {
+      this.connectionManager.constructor.rawDataCollector.processCharacters(text);
+    }
+
+    // NOTE: Do NOT reset timeout here - timeout should apply to the entire response,
+    // not reset on partial data. Only clear timeout when complete response is received
+    // in processReadBuffer()
 
     // Check if we have a complete pfod response
     this.processReadBuffer();

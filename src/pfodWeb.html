@@ -30,14 +30,7 @@
             display: flex;
             overflow: hidden;
         }
-        #canvas-pane {
-            flex: 1;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            background-color: white;
-            overflow: auto;
-        }
+        /* Resize divider - applies to both modes */
         #resize-divider {
             width: 6px;
             background-color: #ccc;
@@ -53,7 +46,42 @@
         #resize-divider.dragging {
             background-color: #0066cc;
         }
-        #canvas-container {
+        .toolbar-button {
+            height: 40px;
+            flex: 1;
+            background-color: black;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            margin: 0;
+        }
+        .toolbar-button:hover {
+            background-color: #333;
+        }
+        .toolbar-button:active {
+            background-color: #555;
+        }
+        .toolbar-button:disabled {
+            cursor: not-allowed;
+            background-color: #222;
+        }
+        .toolbar-button:disabled svg {
+            opacity: 0.3;
+        }
+
+        /* CANVAS DISPLAY MODE - default layout */
+        body.canvas-mode #canvas-pane {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            background-color: white;
+            overflow: auto;
+        }
+        body.canvas-mode #canvas-container {
             position: relative;
             width: 100%;
             height: 100%;
@@ -61,39 +89,241 @@
             justify-content: center;
             align-items: flex-start;
         }
-        #white-border {
+        body.canvas-mode #white-border {
             background-color: white;
             border-radius: 20px;
             padding: 3px;
             border-width: 2px;
         }
-        #black-border {
+        body.canvas-mode #black-border {
             background-color: black;
             border-radius: 18px;
             padding: 3px;
             border-width: 2px;
         }
-        #border-inner {
+        body.canvas-mode #border-inner {
             background-color: white;
             border-radius: 16px;
             padding: 5px;
             border-width: 3px;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
         }
-        canvas {
+        body.canvas-mode #canvas-wrapper {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        body.canvas-mode canvas {
             background-color: #0000ff;
             display: block;
             padding: 0px;
             width: 100%;
             height: 100%;
         }
-        #loading-text {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            color: white;
-            font-size: 16px;
-            z-index: 10;
+        body.canvas-mode #button-bar {
+            height: 40px;
+            background-color: black;
+            display: flex;
+            align-items: center;
+            gap: 0;
+            padding: 0;
+            border: none;
+            flex-shrink: 0;
+            width: 100%;
+        }
+        body.canvas-mode .toolbar-button {
+            height: 40px;
+            flex: 1;
+            background-color: black;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            margin: 0;
+        }
+
+        /* RAW DATA DISPLAY MODE - special layout for raw data */
+        body.rawdata-mode #canvas-pane {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: stretch;
+            background-color: white;
+            overflow: hidden;
+            min-height: 0;
+        }
+        body.rawdata-mode #canvas-container {
+            position: relative;
+            width: 100%;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: stretch;
+            min-height: 0;
+        }
+        body.rawdata-mode #white-border {
+            background-color: white;
+            border-radius: 0;
+            padding: 0;
+            border-width: 0;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        body.rawdata-mode #black-border {
+            background-color: white;
+            border-radius: 0;
+            padding: 0;
+            border-width: 0;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        body.rawdata-mode #border-inner {
+            background-color: white;
+            border-radius: 0;
+            padding: 0;
+            border-width: 0;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-height: 0;
+        }
+        body.rawdata-mode #canvas-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: stretch;
+            overflow: hidden;
+            min-height: 0;
+        }
+        body.rawdata-mode canvas {
+            display: none;
+        }
+        body.rawdata-mode #button-bar {
+            height: 40px;
+            background-color: black;
+            display: flex;
+            align-items: center;
+            gap: 0;
+            padding: 0;
+            border: none;
+            flex-shrink: 0;
+            width: 100%;
+        }
+        body.rawdata-mode .toolbar-button {
+            height: 40px;
+            flex: 1;
+            background-color: black;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            margin: 0;
+        }
+
+        /* CHART DISPLAY MODE - special layout for chart rendering */
+        body.chart-mode #canvas-pane {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: stretch;
+            background-color: white;
+            overflow: hidden;
+            min-height: 0;
+        }
+        body.chart-mode #canvas-container {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: stretch;
+            min-height: 0;
+        }
+        body.chart-mode #white-border {
+            background-color: white;
+            border-radius: 0;
+            padding: 0;
+            border-width: 0;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        body.chart-mode #black-border {
+            background-color: white;
+            border-radius: 0;
+            padding: 0;
+            border-width: 0;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        body.chart-mode #border-inner {
+            background-color: white;
+            border-radius: 0;
+            padding: 0;
+            border-width: 0;
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-height: 0;
+        }
+        body.chart-mode #canvas-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: stretch;
+            overflow: hidden;
+            min-height: 0;
+        }
+        body.chart-mode canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background-color: white;
+        }
+        body.chart-mode #button-bar {
+            height: 40px;
+            background-color: black;
+            display: flex;
+            align-items: center;
+            gap: 0;
+            padding: 0;
+            border: none;
+            flex-shrink: 0;
+            width: 100%;
+        }
+        body.chart-mode .toolbar-button {
+            height: 40px;
+            flex: 1;
+            background-color: black;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            margin: 0;
         }
         #message-overlay {
             display: none;
@@ -253,15 +483,38 @@
         }
     </style>
 </head>
-<body>
+<body class="canvas-mode">
     <div id="layout-container">
         <div id="canvas-pane">
             <div id="canvas-container">
                 <div id="white-border">
                     <div id="black-border">
-                      <div id="border-inner" style="position: relative;">
-                        <canvas id="drawing-canvas" width="300" height="100"></canvas>
-                    </div>
+                      <div id="border-inner">
+                        <div id="canvas-wrapper">
+                          <canvas id="drawing-canvas" width="300" height="100"></canvas>
+                        </div>
+                        <div id="button-bar">
+                          <button class="toolbar-button" id="btn-left-arrow" title="Left arrow">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+                              <polygon points="3,12 18,6 18,18"/>
+                            </svg>
+                          </button>
+                          <button class="toolbar-button" id="btn-reload" title="Reload - resend last command">
+                            <svg width="24" height="24" viewBox="-5 0 30 24" fill="white">
+                              <!-- Reload icon: 5/8 circle with arrow tip -->
+                              <path d="M 12 4 A 8 8 0 1 1 6 6" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"/>
+                              <polygon points="6,6 -2,11 6,11" fill="white"/>
+                            </svg>
+                          </button>
+                          <button class="toolbar-button" id="btn-menu" title="Context menu">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+                              <circle cx="12" cy="5" r="2"/>
+                              <circle cx="12" cy="12" r="2"/>
+                              <circle cx="12" cy="19" r="2"/>
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
                     </div>
                 </div>
             </div>
@@ -343,9 +596,9 @@
                 <div style="margin: 5px 0;">
                     <label for="prompt-timeout">Timeout (s):</label>
                     <select id="prompt-timeout" style="width: 80px;">
-                        <option value="3">3</option>
+                        <option value="3" selected>3</option>
                         <option value="5">5</option>
-                        <option value="10" selected>10</option>
+                        <option value="10">10</option>
                         <option value="20">20</option>
                         <option value="30">30</option>
                     </select>
@@ -595,7 +848,6 @@
         }
     </script>
 
-    <script src="./messageViewer.js"></script>
     <script src="./pfodWeb.js"></script>
 </body>
 </html>

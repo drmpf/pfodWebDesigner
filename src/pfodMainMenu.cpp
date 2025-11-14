@@ -62,7 +62,11 @@ void handle_pfodMainMenu(pfodParser& parser) {
 
     } else if (parser.cmdEquals('A')) {  // click in A menu item that holds the main dwg
       // add touchZone handling here that is not handled in dwg's processDwgCmds
-      sendMainMenuUpdate(parser);  // always reply to the msg.
+      if (parser.isRefresh()) {
+        sendMainMenuUpdate(parser);  // menu is cached just send update
+      } else {
+        sendMainMenu(parser);  // send back the menu designed
+      }
 
     } else if ('!' == cmd) {
       closeConnection(parser.getPfodAppStream());
