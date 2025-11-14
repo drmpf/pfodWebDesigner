@@ -38,6 +38,9 @@ This code may be freely used for both private and commercial use
 Provide this copyright is maintained.  
 
 # Revisions
+Version 3.0.2 disable refresh in chart mode fixed value scaling  
+Version 3.0.1 auto chart option on startup  
+Version 3.0.0 added initial charting support  
 Version 2.0.4 fixed scaling for nested dwgs   
 Version 2.0.3 fixed transform for nested dwgs   
 Version 2.0.2 fixed transform pushZero for nested dwgs   
